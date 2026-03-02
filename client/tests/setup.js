@@ -5,8 +5,12 @@ import { afterEach, vi } from 'vitest';
 // Cleanup after each test
 afterEach(() => {
     cleanup();
-    localStorage.clear();
-    sessionStorage.clear();
+    if (typeof localStorage?.clear === 'function') {
+        localStorage.clear();
+    }
+    if (typeof sessionStorage?.clear === 'function') {
+        sessionStorage.clear();
+    }
 });
 
 // Mock react-router-dom

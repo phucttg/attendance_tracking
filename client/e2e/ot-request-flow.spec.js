@@ -125,6 +125,25 @@ test.describe('OT Request Flow — E2E', () => {
       await expect(page.getByText('Đã gửi yêu cầu OT thành công!')).toBeVisible({ timeout: 5000 });
     });
 
+    test('Employee creates cross-midnight OT request successfully', async ({ page }) => {
+      await login(page, EMPLOYEE);
+      await goToRequests(page);
+
+      await page.locator('#requestType').selectOption('OT_REQUEST');
+      await page.locator('#ot-date').fill(tomorrowStr());
+      await page.locator('#ot-time').fill('00:30');
+      await page.locator('#ot-reason').fill('Cross-midnight deployment');
+
+      await expect(page.getByText(/Giờ về sẽ tính là ngày hôm sau/i)).toBeVisible();
+
+      await page.getByRole('button', { name: 'Tạo yêu cầu' }).click();
+      await expect(page.getByText('Xác nhận đăng ký OT')).toBeVisible();
+      await expect(page.getByText(/00:30 \(ngày \d{2}\/\d{2}\/\d{4}\)/)).toBeVisible();
+      await page.getByRole('button', { name: 'Xác nhận gửi' }).click();
+
+      await expect(page.getByText('Đã gửi yêu cầu OT thành công!')).toBeVisible({ timeout: 5000 });
+    });
+
     test('OT request appears in my requests list with purple badge', async ({ page }) => {
       await login(page, EMPLOYEE);
       await goToRequests(page);
