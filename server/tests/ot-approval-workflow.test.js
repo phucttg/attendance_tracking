@@ -515,10 +515,21 @@ describe('OT Approval Workflow Integration', () => {
       expect(res.body.message).toContain('30 minutes');
     });
 
-    it('should reject cross-midnight estimatedEndTime', async () => {
+    it('should allow cross-midnight estimatedEndTime before 08:00', async () => {
       const res = await createOtReq(TODAY, '2026-02-11T02:00:00+07:00');
+      expect(res.status).toBe(201);
+    });
+
+    it('should reject cross-midnight estimatedEndTime at or after 08:00', async () => {
+      const res = await createOtReq(TODAY, '2026-02-11T08:00:00+07:00');
       expect(res.status).toBe(400);
-      expect(res.body.message).toContain('Cross-midnight');
+      expect(res.body.message).toContain('07:59');
+    });
+
+    it('should reject next-day noon estimatedEndTime', async () => {
+      const res = await createOtReq(TODAY, '2026-02-11T12:00:00+07:00');
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('07:59');
     });
 
     it('should reject after checkout', async () => {

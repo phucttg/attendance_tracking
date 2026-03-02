@@ -4,6 +4,22 @@ import Attendance from '../models/Attendance.js';
 import { getDateKey, getTodayDateKey, isInOtPeriod, getOtDuration } from '../utils/dateUtils.js';
 import { toValidDate, assertHasTzIfString } from './requestDateValidation.js';
 
+const BUSINESS_TZ_OFFSET_MS = 7 * 60 * 60 * 1000;
+const OT_CROSS_MIDNIGHT_CUTOFF = '08:00';
+
+const getNextDateKey = (dateKey) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const nextDate = new Date(Date.UTC(year, month - 1, day + 1, 12, 0, 0));
+  return nextDate.toISOString().slice(0, 10);
+};
+
+const getTimeKeyInGmt7 = (date) => {
+  const shifted = new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
+  const hh = String(shifted.getUTCHours()).padStart(2, '0');
+  const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+
 /**
  * Create OT request with comprehensive validation
  *
@@ -13,7 +29,7 @@ import { toValidDate, assertHasTzIfString } from './requestDateValidation.js';
  * - B1: Minimum 30 minutes OT
  * - D1: Max 31 pending per month
  * - D2: Auto-extend if PENDING exists for same date
- * - I1: Cross-midnight requires 2 separate requests
+ * - I1: Cross-midnight uses 1 request (next-day end time only in 00:00-07:59)
  *
  * @param {string} userId - User's ObjectId
  * @param {Object} requestData - { date, estimatedEndTime, reason }
@@ -90,16 +106,29 @@ export const createOtRequest = async (userId, requestData) => {
   }
   // ========== P1-2 FIX END ==========
 
-  // Validation 2: estimatedEndTime must be on same date (I1)
+  // Validation 2: estimatedEndTime must be on request date or next day only
   const estimatedDateKey = getDateKey(endTime);
-  if (estimatedDateKey !== date) {
-    const error = new Error('Cross-midnight OT requires separate requests for each date. Please create a request for each day.');
+  const nextDateKey = getNextDateKey(date);
+  const isCrossMidnight = estimatedDateKey === nextDateKey;
+
+  if (estimatedDateKey !== date && !isCrossMidnight) {
+    const error = new Error('estimatedEndTime must be on request date or the immediate next day');
     error.statusCode = 400;
     throw error;
   }
 
-  // Validation 3: estimatedEndTime must be > 17:31 (OT period)
-  if (!isInOtPeriod(date, endTime)) {
+  // Validation 2.1: next-day end time must be before 08:00 (anti-bypass)
+  if (isCrossMidnight) {
+    const endTimeKey = getTimeKeyInGmt7(endTime);
+    if (endTimeKey >= OT_CROSS_MIDNIGHT_CUTOFF) {
+      const error = new Error('Cross-midnight OT only supports next-day end time from 00:00 to 07:59 (GMT+7)');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  // Validation 3: same-day end time must be > 17:31 (OT period)
+  if (!isCrossMidnight && !isInOtPeriod(date, endTime)) {
     const error = new Error('OT must start after 17:31. Please adjust your estimated end time.');
     error.statusCode = 400;
     throw error;
@@ -122,7 +151,7 @@ export const createOtRequest = async (userId, requestData) => {
   }
 
   // Validation 6: Max 31 pending per month (D1)
-  // P1 Fix: Use $or to count legacy records (date vs checkInDate field)
+  // Legacy compatibility: some older OT docs may still contain checkInDate.
   const month = date.substring(0, 7);
   const pendingCount = await Request.countDocuments({
     userId,
@@ -141,7 +170,7 @@ export const createOtRequest = async (userId, requestData) => {
   }
 
   // D2: Auto-extend - Check if PENDING request exists for same date (ATOMIC FIX)
-  // P1 Fix: Use $or to match legacy records (date vs checkInDate field)
+  // Legacy compatibility: keep checkInDate branch for historical data reads.
   const existingRequest = await Request.findOneAndUpdate(
     {
       userId,
@@ -169,7 +198,6 @@ export const createOtRequest = async (userId, requestData) => {
       userId,
       type: 'OT_REQUEST',
       date,
-      checkInDate: date,  // For consistency with schema + unique index
       estimatedEndTime: endTime,
       reason: trimmedReason,
       status: 'PENDING'

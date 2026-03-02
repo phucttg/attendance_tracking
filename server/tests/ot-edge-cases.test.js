@@ -7,7 +7,7 @@
  *  #3  ADJUST_TIME + OT_REQUEST same day conflict
  *  #4  Auto-extend after APPROVED creates duplicate
  *  #5  Cancel PENDING when APPROVED exists same day
- *  #6  Cross-midnight: 1 attendance record, 2 OT requests
+ *  #6  Cross-midnight: 1 attendance record, 1 OT request (next-day end < 08:00)
  *  #7  Admin force-checkout + OT approval
  *  #8  Approve then checkout before 17:30
  *  #9  Minimum 30min validation vs actual <30min OT
@@ -439,71 +439,86 @@ describe('OT Request Edge Cases', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // EDGE CASE #6: Cross-midnight — 1 attendance, 2 OT requests
-  // Severity: CRITICAL (design gap — 2nd request has no attendance)
+  // EDGE CASE #6: Cross-midnight — single OT request policy
+  // Severity: HIGH (must avoid API bypass and preserve attendance semantics)
   // ═══════════════════════════════════════════════════════════════
 
-  describe('Edge #6: Cross-midnight OT — design gap', () => {
-    it('should reject OT request with estimatedEndTime on next day (I1 validation)', async () => {
-      // Try cross-midnight: end time = tomorrow 02:00
+  describe('Edge #6: Cross-midnight OT — single request policy', () => {
+    it('should allow cross-midnight request when next-day end time is before 08:00', async () => {
       const crossMidnightRes = await createOtRequest(
         TODAY,
-        `${TOMORROW}T02:00:00+07:00`, // Next day!
-        'Cross-midnight attempt'
+        `${TOMORROW}T00:30:00+07:00`,
+        'Cross-midnight single request'
+      );
+
+      expect(crossMidnightRes.status).toBe(201);
+      expect(crossMidnightRes.body.request.date).toBe(TODAY);
+      expect(getDateKey(new Date(crossMidnightRes.body.request.estimatedEndTime))).toBe(TOMORROW);
+    });
+
+    it('should reject next-day end time at or after 08:00 (anti-bypass)', async () => {
+      const crossMidnightRes = await createOtRequest(
+        TODAY,
+        `${TOMORROW}T08:00:00+07:00`,
+        'Cross-midnight bypass attempt'
       );
 
       expect(crossMidnightRes.status).toBe(400);
-      expect(crossMidnightRes.body.message).toContain('Cross-midnight');
+      expect(crossMidnightRes.body.message).toContain('07:59');
     });
 
-    it('should allow creating 2 separate OT requests for cross-midnight', async () => {
-      // Request 1: Today until 23:59
-      const res1 = await createOtRequest(
+    it('should allow next-day 07:59 boundary', async () => {
+      const crossMidnightRes = await createOtRequest(
         TODAY,
-        `${TODAY}T23:59:00+07:00`,
-        'Cross-midnight day 1'
+        `${TOMORROW}T07:59:00+07:00`,
+        'Cross-midnight 07:59 boundary'
       );
-      expect(res1.status).toBe(201);
 
-      // Request 2: Tomorrow until 02:00
-      const res2 = await createOtRequest(
-        TOMORROW,
-        `${TOMORROW}T19:00:00+07:00`, // Must be valid OT period (>17:31)
-        'Cross-midnight day 2'
-      );
-      expect(res2.status).toBe(201);
+      expect(crossMidnightRes.status).toBe(201);
     });
 
-    it('should expose design gap: approved OT for day 2 has no attendance effect', async () => {
-      // 1. Check in today at 08:30
+    it('should reject estimatedEndTime beyond immediate next day', async () => {
+      const beyondNextDayRes = await createOtRequest(
+        TODAY,
+        '2026-02-12T00:30:00+07:00',
+        'Beyond next day'
+      );
+
+      expect(beyondNextDayRes.status).toBe(400);
+      expect(beyondNextDayRes.body.message).toContain('immediate next day');
+    });
+
+    it('should apply approval to check-in date attendance and compute 419 OT minutes at 00:30 checkout', async () => {
+      // 1. Check in at 08:30 on TODAY
       const checkInTime = new Date('2026-02-10T01:30:00.000Z');
       vi.setSystemTime(checkInTime);
       await doCheckIn();
 
-      // 2. Create and approve OT for today
+      // 2. Create cross-midnight OT request (TODAY -> TOMORROW 00:30)
       vi.setSystemTime(FIXED_TIME);
-      const res1 = await createOtRequest(TODAY, `${TODAY}T23:59:00+07:00`, 'Day 1 OT');
-      expect(res1.status).toBe(201);
-      await approveOtRequest(res1.body.request._id);
+      const otRes = await createOtRequest(TODAY, `${TOMORROW}T00:30:00+07:00`, 'Cross-midnight approved');
+      expect(otRes.status).toBe(201);
 
-      // 3. Create and approve OT for tomorrow
-      const res2 = await createOtRequest(TOMORROW, `${TOMORROW}T19:00:00+07:00`, 'Day 2 OT');
-      expect(res2.status).toBe(201);
-      await approveOtRequest(res2.body.request._id);
+      // 3. Approve the request
+      const approveRes = await approveOtRequest(otRes.body.request._id);
+      expect(approveRes.status).toBe(200);
 
-      // 4. Verify: Attendance for TODAY has otApproved = true
+      // 4. Checkout at TOMORROW 00:30
+      const checkOutTime = new Date('2026-02-10T17:30:00.000Z'); // 2026-02-11 00:30 GMT+7
+      vi.setSystemTime(checkOutTime);
+      const checkoutRes = await doCheckOut();
+      expect(checkoutRes.status).toBe(200);
+
+      // 5. Attendance belongs to check-in date, with approved OT minutes
       const attToday = await Attendance.findOne({ userId: employeeId, date: TODAY }).lean();
       expect(attToday).toBeDefined();
       expect(attToday.otApproved).toBe(true);
+      const computed = computeAttendance(attToday);
+      expect(computed.otMinutes).toBe(419);
 
-      // 5. KEY: Attendance for TOMORROW does NOT exist
-      //    (cross-midnight creates only 1 attendance record for check-in date)
+      // 6. No separate attendance for TOMORROW (session still anchored on TODAY)
       const attTomorrow = await Attendance.findOne({ userId: employeeId, date: TOMORROW }).lean();
-      expect(attTomorrow).toBeNull(); // ← DESIGN GAP: No attendance for day 2
-
-      // 6. The approved OT for TOMORROW has no operational effect
-      //    because approve sets otApproved on Attendance WHERE date=TOMORROW,
-      //    but no such Attendance record exists.
+      expect(attTomorrow).toBeNull();
     });
   });
 

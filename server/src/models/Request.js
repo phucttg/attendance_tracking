@@ -9,9 +9,17 @@ const BUSINESS_TZ_OFFSET_MS = BUSINESS_TZ_OFFSET_HOURS * 60 * 60 * 1000;
 const OT_START_TIME_HOURS = 17;  // 17:31 in 24h format
 const OT_START_TIME_MINUTES = 31;
 const OT_MIN_DURATION_MINUTES = 30;  // Minimum OT duration (B1 requirement)
+const OT_CROSS_MIDNIGHT_CUTOFF_HOURS = 8;  // 08:00 boundary (exclusive)
+const OT_CROSS_MIDNIGHT_CUTOFF_MINUTES = 0;
 
 const REQUEST_TYPES = ['ADJUST_TIME', 'LEAVE', 'OT_REQUEST'];
 const REQUEST_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'];
+
+const getNextDateKey = (dateKey) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const nextDate = new Date(Date.UTC(year, month - 1, day + 1, 12, 0, 0));
+  return nextDate.toISOString().slice(0, 10);
+};
 
 const requestSchema = new mongoose.Schema(
   {
@@ -177,21 +185,24 @@ requestSchema.pre('validate', function() {
       return; // Stop validation to prevent crash in subsequent code
     }
     
-    // P1-1: Validate estimatedEndTime belongs to same date (GMT+7)
+    // P1-1: Validate estimatedEndTime date relation (same day or immediate next day)
     if (this.date && this.estimatedEndTime) {
       // Convert UTC timestamp to business timezone date key
       const estDate = new Date(this.estimatedEndTime.getTime() + BUSINESS_TZ_OFFSET_MS);
       const estDateKey = estDate.toISOString().slice(0, 10);
+      const nextDateKey = getNextDateKey(this.date);
+      const isSameDay = estDateKey === this.date;
+      const isNextDay = estDateKey === nextDateKey;
       
-      if (estDateKey !== this.date) {
+      if (!isSameDay && !isNextDay) {
         this.invalidate(
           'estimatedEndTime',
-          `estimatedEndTime must belong to date ${this.date} (GMT+${BUSINESS_TZ_OFFSET_HOURS})`
+          `estimatedEndTime must belong to date ${this.date} or ${nextDateKey} (GMT+${BUSINESS_TZ_OFFSET_HOURS})`
         );
+        return;
       }
       
       // P1-2: Validate OT business rules (B1 requirement from docs/rules.md §10.10)
-      // OT must start after 17:31 and be at least 30 minutes
       const estTime = new Date(this.estimatedEndTime.getTime() + BUSINESS_TZ_OFFSET_MS);
       const estHours = estTime.getUTCHours();
       const estMinutes = estTime.getUTCMinutes();
@@ -200,6 +211,19 @@ requestSchema.pre('validate', function() {
       const estTotalMinutes = estHours * 60 + estMinutes;
       const otStartMinutes = OT_START_TIME_HOURS * 60 + OT_START_TIME_MINUTES;  // 17:31 = 1051 min
       const minOtEndMinutes = otStartMinutes + OT_MIN_DURATION_MINUTES;  // 17:31 + 30 = 18:01 = 1081 min
+      const crossMidnightCutoffMinutes =
+        OT_CROSS_MIDNIGHT_CUTOFF_HOURS * 60 + OT_CROSS_MIDNIGHT_CUTOFF_MINUTES; // 08:00 = 480 min
+
+      // Cross-midnight branch: only allow next-day end time in 00:00-07:59
+      if (isNextDay) {
+        if (estTotalMinutes >= crossMidnightCutoffMinutes) {
+          this.invalidate(
+            'estimatedEndTime',
+            'Cross-midnight OT only supports next-day end time from 00:00 to 07:59 (GMT+7)'
+          );
+        }
+        return;
+      }
       
       if (estTotalMinutes < minOtEndMinutes) {
         this.invalidate(
