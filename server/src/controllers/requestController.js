@@ -95,7 +95,7 @@ export const createRequest = async (req, res) => {
 
     return res.status(201).json({ request });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
+    const statusCode = error.statusCode || (error?.name === 'ValidationError' ? 400 : 500);
     return res.status(statusCode).json({
       message: error.message || 'Failed to create request'
     });

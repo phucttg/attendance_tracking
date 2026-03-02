@@ -21,6 +21,26 @@ const getNextDateKey = (dateKey) => {
   return nextDate.toISOString().slice(0, 10);
 };
 
+const isValidCalendarDate = (dateKey) => {
+  if (typeof dateKey !== 'string') {
+    return false;
+  }
+
+  const match = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day;
+};
+
 const requestSchema = new mongoose.Schema(
   {
     userId: {
@@ -143,6 +163,20 @@ requestSchema.pre('validate', function() {
       this.checkInDate = this.date;
     }
 
+    const hasValidAdjustDate = !this.date || isValidCalendarDate(this.date);
+    const hasValidAdjustCheckInDate = !this.checkInDate || isValidCalendarDate(this.checkInDate);
+    const hasValidAdjustCheckOutDate = !this.checkOutDate || isValidCalendarDate(this.checkOutDate);
+
+    if (this.date && !hasValidAdjustDate) {
+      this.invalidate('date', `Invalid calendar date: ${this.date}`);
+    }
+    if (this.checkInDate && !hasValidAdjustCheckInDate) {
+      this.invalidate('checkInDate', `Invalid calendar date: ${this.checkInDate}`);
+    }
+    if (this.checkOutDate && !hasValidAdjustCheckOutDate) {
+      this.invalidate('checkOutDate', `Invalid calendar date: ${this.checkOutDate}`);
+    }
+
     // P0: Strict invariant enforcement to prevent data inconsistency
     // Without this, approve/updateAttendance will lookup wrong date
     if (this.date && this.checkInDate && this.date !== this.checkInDate) {
@@ -150,7 +184,13 @@ requestSchema.pre('validate', function() {
     }
 
     // Cross-midnight validation: checkOutDate >= checkInDate (string comparison OK for YYYY-MM-DD)
-    if (this.checkInDate && this.checkOutDate && this.checkOutDate < this.checkInDate) {
+    if (
+      this.checkInDate &&
+      this.checkOutDate &&
+      hasValidAdjustCheckInDate &&
+      hasValidAdjustCheckOutDate &&
+      this.checkOutDate < this.checkInDate
+    ) {
       this.invalidate('checkOutDate', 'checkOutDate must be >= checkInDate for cross-midnight requests');
     }
   }
@@ -173,6 +213,11 @@ requestSchema.pre('validate', function() {
     if (!this.date) {
       this.invalidate('date', 'Date is required for OT_REQUEST');
     }
+
+    const hasValidOtDate = Boolean(this.date) && isValidCalendarDate(this.date);
+    if (this.date && !hasValidOtDate) {
+      this.invalidate('date', `Invalid calendar date: ${this.date}`);
+    }
     
     if (!this.estimatedEndTime) {
       this.invalidate('estimatedEndTime', 'estimatedEndTime is required for OT_REQUEST');
@@ -186,7 +231,7 @@ requestSchema.pre('validate', function() {
     }
     
     // P1-1: Validate estimatedEndTime date relation (same day or immediate next day)
-    if (this.date && this.estimatedEndTime) {
+    if (hasValidOtDate && this.estimatedEndTime) {
       // Convert UTC timestamp to business timezone date key
       const estDate = new Date(this.estimatedEndTime.getTime() + BUSINESS_TZ_OFFSET_MS);
       const estDateKey = estDate.toISOString().slice(0, 10);
@@ -247,9 +292,24 @@ requestSchema.pre('validate', function() {
     // Clear OT_REQUEST-specific fields
     this.estimatedEndTime = null;
     this.actualOtMinutes = null;
+
+    const hasValidLeaveStartDate = !this.leaveStartDate || isValidCalendarDate(this.leaveStartDate);
+    const hasValidLeaveEndDate = !this.leaveEndDate || isValidCalendarDate(this.leaveEndDate);
+
+    if (this.leaveStartDate && !hasValidLeaveStartDate) {
+      this.invalidate('leaveStartDate', `Invalid calendar date: ${this.leaveStartDate}`);
+    }
+    if (this.leaveEndDate && !hasValidLeaveEndDate) {
+      this.invalidate('leaveEndDate', `Invalid calendar date: ${this.leaveEndDate}`);
+    }
     
     // P1-2: LEAVE date range validation
-    if (this.leaveStartDate && this.leaveEndDate) {
+    if (
+      this.leaveStartDate &&
+      this.leaveEndDate &&
+      hasValidLeaveStartDate &&
+      hasValidLeaveEndDate
+    ) {
       if (this.leaveEndDate < this.leaveStartDate) {
         this.invalidate(
           'leaveEndDate',
