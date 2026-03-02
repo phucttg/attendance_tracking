@@ -304,29 +304,29 @@ On approve:
 
 ### 10.3 Cross-Midnight OT (I1)
 
-**Rule:** Must create 2 separate OT requests for cross-midnight shifts.
+**Rule:** Cross-midnight OT uses **1 request** anchored by check-in date.
 
-**Why:**
-- Each attendance record has 1 date (check-in date)
-- OT tied to specific attendance record
-- Cross-midnight = 2 attendance records = 2 OT requests
+**Definition:**
+- `date` remains the check-in date.
+- `estimatedEndTime` may be:
+  - same day as `date`, or
+  - immediate next day (`date + 1`) only when time is in `00:00-07:59` (GMT+7).
 
 **Example:**
 ```
 Shift: 2026-02-05 08:30 → 2026-02-06 02:00
 
-Required Requests:
-1. OT_REQUEST: date=2026-02-05, estimatedEndTime=2026-02-05T23:59
-2. OT_REQUEST: date=2026-02-06, estimatedEndTime=2026-02-06T02:00
+Request:
+OT_REQUEST: date=2026-02-05, estimatedEndTime=2026-02-06T02:00:00+07:00
 
 Result:
-- Attendance 1 (2/5): otApproved=true, OT = 17:31-23:59
-- Attendance 2 (2/6): otApproved=true, OT = 00:00-02:00
+- Attendance (2/5): otApproved=true
+- OT duration calculated from 17:31 (2/5) to 02:00 (2/6)
 ```
 
 **Validation:**
-- System rejects if `getDateKey(estimatedEndTime) != date`
-- Error message: "Cross-midnight OT requires separate requests for each date"
+- Reject if `estimatedEndTime` is not on `date` or `date + 1`.
+- If `estimatedEndTime` is on `date + 1`, reject when time is `>= 08:00`.
 
 ---
 

@@ -93,7 +93,7 @@ Manager:
 - **Quota (D1)**: Max 31 pending OT requests per month per user
 - **Minimum duration (B1)**: OT must be ≥ 30 minutes (estimatedEndTime ≥ 18:01)
 - **Weekend/holiday exception (F1)**: No OT_REQUEST needed for weekend/holiday OT
-- **Cross-midnight OT (I1)**: Requires 2 separate requests (one per date)
+- **Cross-midnight OT (I1)**: 1 request, allows next-day end time in 00:00-07:59 (GMT+7)
 - **Cancellation (C2)**: DELETE /api/requests/:id (owner, PENDING only, deletes record)
 - **Check-in integration**: otApproved auto-set on check-in if approved OT exists
 - **Reporting (H2)**: Three OT metrics: totalOtMinutes, approvedOtMinutes, unapprovedOtMinutes
