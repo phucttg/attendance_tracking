@@ -65,6 +65,14 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
         });
     };
 
+    const formatOtEndTime = (estimatedEndTime, requestDate) => {
+        if (!estimatedEndTime) return '--:--';
+        const time = formatTime(estimatedEndTime);
+        const endDateKey = getVnDateString(estimatedEndTime);
+        if (!requestDate || !endDateKey || endDateKey === requestDate) return time;
+        return `${time} (${formatDate(endDateKey)})`;
+    };
+
     /**
      * Detect if request has cross-midnight checkout
      * 
@@ -244,7 +252,9 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
                                             <div className="text-sm space-y-1">
                                                 <div>
                                                     <span className="text-gray-600">⏰ Dự kiến về:</span>
-                                                    <span className="ml-2 font-medium">{formatTime(req.estimatedEndTime)}</span>
+                                                    <span className="ml-2 font-medium">
+                                                        {formatOtEndTime(req.estimatedEndTime, req.date)}
+                                                    </span>
                                                 </div>
                                                 {req.actualOtMinutes != null && (
                                                     <div>

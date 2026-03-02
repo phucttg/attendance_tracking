@@ -10,7 +10,22 @@ import {
 } from 'flowbite-react';
 import { HiPlus } from 'react-icons/hi';
 import { createRequest } from '../../api/requestApi';
-import { buildIsoTimestamp } from '../../utils/dateDisplay';
+import {
+    addDaysToDate,
+    buildIsoTimestamp,
+    getNextDayDisplay,
+} from '../../utils/dateDisplay';
+
+const OT_CROSS_MIDNIGHT_CUTOFF = '08:00';
+
+const isCrossMidnightOt = (estimatedEndTime) =>
+    Boolean(estimatedEndTime) && estimatedEndTime < OT_CROSS_MIDNIGHT_CUTOFF;
+
+const resolveOtEndDate = (date, estimatedEndTime) => {
+    if (!date || !estimatedEndTime) return null;
+    if (!isCrossMidnightOt(estimatedEndTime)) return date;
+    return addDaysToDate(date, 1);
+};
 
 /**
  * Form for creating OT_REQUEST requests, including confirm modal flow.
@@ -68,7 +83,14 @@ export default function OtRequestForm({
         // E1.5: Same-day retroactive time check (CRITICAL - matches backend validation)
         if (date === todayStr) {
             const now = new Date();
-            const estimatedTime = new Date(`${date}T${estimatedEndTime}:00+07:00`);
+            const targetDate = resolveOtEndDate(date, estimatedEndTime);
+            if (!targetDate) {
+                return { valid: false, error: 'Ngày hoặc giờ không hợp lệ' };
+            }
+            const estimatedTime = new Date(`${targetDate}T${estimatedEndTime}:00+07:00`);
+            if (isNaN(estimatedTime.getTime())) {
+                return { valid: false, error: 'Ngày hoặc giờ không hợp lệ' };
+            }
 
             if (estimatedTime <= now) {
                 return {
@@ -79,23 +101,26 @@ export default function OtRequestForm({
         }
 
         // D1: Must be after 17:31
-        if (estimatedEndTime <= '17:31') {
+        const isCrossDay = isCrossMidnightOt(estimatedEndTime);
+        if (!isCrossDay && estimatedEndTime <= '17:31') {
             return { valid: false, error: 'Giờ về phải sau 17:31 (hết giờ làm việc)' };
         }
 
         // D1: Minimum 30 minutes
         try {
+            const targetDate = resolveOtEndDate(date, estimatedEndTime);
+            if (!targetDate) {
+                return { valid: false, error: 'Ngày hoặc giờ không hợp lệ' };
+            }
             const otStart = new Date(`${date}T17:31:00+07:00`);
-            const otEnd = new Date(`${date}T${estimatedEndTime}:00+07:00`);
+            const otEnd = new Date(`${targetDate}T${estimatedEndTime}:00+07:00`);
+            if (isNaN(otStart.getTime()) || isNaN(otEnd.getTime())) {
+                return { valid: false, error: 'Ngày hoặc giờ không hợp lệ' };
+            }
             const diffMinutes = Math.floor((otEnd - otStart) / 60000);
 
             if (diffMinutes < 30) {
                 return { valid: false, error: 'Thời gian OT tối thiểu là 30 phút (từ 18:01 trở đi)' };
-            }
-
-            // Sanity check
-            if (estimatedEndTime > '23:59') {
-                return { valid: false, error: 'Giờ về không hợp lệ' };
             }
 
             return { valid: true, error: '', otMinutes: diffMinutes };
@@ -139,10 +164,15 @@ export default function OtRequestForm({
         setModalError('');
 
         try {
+            const isCrossDay = isCrossMidnightOt(formData.estimatedEndTime);
             const payload = {
                 type: 'OT_REQUEST',
                 date: formData.date,
-                estimatedEndTime: buildIsoTimestamp(formData.date, formData.estimatedEndTime, 0),
+                estimatedEndTime: buildIsoTimestamp(
+                    formData.date,
+                    formData.estimatedEndTime,
+                    isCrossDay ? 1 : 0
+                ),
                 reason: formData.reason.trim(),
             };
 
@@ -160,6 +190,9 @@ export default function OtRequestForm({
             setSubmitting(false);
         }
     };
+
+    const isCrossDayOt = isCrossMidnightOt(formData.estimatedEndTime);
+    const nextDayDisplay = isCrossDayOt && formData.date ? getNextDayDisplay(formData.date) : '';
 
     return (
         <>
@@ -201,16 +234,25 @@ export default function OtRequestForm({
                             required
                         />
                         <div className="text-xs text-gray-600 mt-1 space-y-1">
-                            <p>Phải sau 17:31 (hết giờ làm việc)</p>
+                            <p>Giờ cùng ngày phải sau 17:31 (hết giờ làm việc)</p>
+                            <p>Giờ 00:00-07:59 sẽ được tính là ngày hôm sau</p>
                             <p>Tối thiểu 30 phút OT (tức là từ 18:01 trở đi)</p>
                         </div>
+                        {formData.date && isCrossDayOt && (
+                            <p className="text-xs text-indigo-600 mt-1">
+                                ⏰ Giờ về sẽ tính là ngày hôm sau ({nextDayDisplay})
+                            </p>
+                        )}
                     </div>
 
                     {/* Real-time OT Duration Display */}
                     {formData.date && formData.estimatedEndTime && (() => {
                         try {
+                            const targetDate = resolveOtEndDate(formData.date, formData.estimatedEndTime);
+                            if (!targetDate) return null;
                             const otStart = new Date(`${formData.date}T17:31:00+07:00`);
-                            const otEnd = new Date(`${formData.date}T${formData.estimatedEndTime}:00+07:00`);
+                            const otEnd = new Date(`${targetDate}T${formData.estimatedEndTime}:00+07:00`);
+                            if (isNaN(otStart.getTime()) || isNaN(otEnd.getTime())) return null;
                             const minutes = Math.floor((otEnd - otStart) / 60000);
 
                             if (minutes > 0) {
@@ -303,7 +345,10 @@ export default function OtRequestForm({
 
                                 <div className="flex justify-between">
                                     <span className="text-gray-600">Dự kiến về:</span>
-                                    <span className="font-medium">{formData.estimatedEndTime}</span>
+                                    <span className="font-medium">
+                                        {formData.estimatedEndTime}
+                                        {isCrossDayOt && nextDayDisplay && ` (ngày ${nextDayDisplay})`}
+                                    </span>
                                 </div>
 
                                 <div className="flex justify-between bg-green-50 rounded p-2">

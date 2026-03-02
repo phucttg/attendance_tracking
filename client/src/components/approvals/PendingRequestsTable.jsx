@@ -74,6 +74,21 @@ export default function PendingRequestsTable({
         });
     };
 
+    const getVnDateKey = (isoString) => {
+        if (!isoString) return '';
+        const date = new Date(isoString);
+        if (isNaN(date.getTime())) return '';
+        return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    };
+
+    const formatOtEndTime = (estimatedEndTime, requestDate) => {
+        if (!estimatedEndTime) return '--:--';
+        const time = formatTime(estimatedEndTime);
+        const endDateKey = getVnDateKey(estimatedEndTime);
+        if (!requestDate || !endDateKey || endDateKey === requestDate) return time;
+        return `${time} (${formatDate(endDateKey)})`;
+    };
+
     const getLeaveTypeLabel = (type) => {
         const labels = {
             ANNUAL: 'Phép năm',
@@ -164,7 +179,9 @@ export default function PendingRequestsTable({
                                                     </div>
                                                     <div>
                                                         <span className="text-gray-600">Dự kiến về:</span>
-                                                        <span className="ml-2 font-medium">{formatTime(req.estimatedEndTime)}</span>
+                                                        <span className="ml-2 font-medium">
+                                                            {formatOtEndTime(req.estimatedEndTime, req.date)}
+                                                        </span>
                                                     </div>
                                                     {(() => {
                                                         try {
