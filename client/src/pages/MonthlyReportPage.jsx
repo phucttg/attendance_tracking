@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Select, Button, Spinner, Alert } from 'flowbite-react';
+import { Table, Select, Button, Spinner, Alert, Tooltip } from 'flowbite-react';
 import { HiDownload } from 'react-icons/hi';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { getTeams } from '../api/memberApi';
 import { downloadBlob } from '../utils/downloadBlob';
 
 /**
@@ -27,6 +28,12 @@ export default function MonthlyReportPage() {
     const [selectedMonth, setSelectedMonth] = useState(today.slice(0, 7));
     // Default: Admin sees company, Manager sees team (avoids 400 when Admin has no teamId)
     const [scope, setScope] = useState(isAdmin ? 'company' : 'team');
+    const [selectedTeamId, setSelectedTeamId] = useState('');
+
+    // Teams dropdown for Admin
+    const [teams, setTeams] = useState([]);
+    const [teamsLoading, setTeamsLoading] = useState(false);
+    const [teamsError, setTeamsError] = useState('');
 
     // Data states
     const [summary, setSummary] = useState([]);
@@ -36,11 +43,50 @@ export default function MonthlyReportPage() {
 
     // Derived scope: non-admin always uses 'team' (prevents race condition on role change)
     const effectiveScope = isAdmin ? scope : 'team';
+    const requiresTeamSelection = isAdmin && effectiveScope === 'team' && !selectedTeamId;
 
-    // Defense-in-depth: ensure Admin uses 'company' if isAdmin changes after mount
+    // Defense-in-depth: non-admin always uses team scope
     useEffect(() => {
-        if (isAdmin && scope === 'team') setScope('company');
+        if (!isAdmin && scope !== 'team') setScope('team');
     }, [isAdmin, scope]);
+
+    // Keep Admin default scope as company when role is loaded asynchronously
+    useEffect(() => {
+        if (isAdmin && scope !== 'company' && !selectedTeamId) {
+            setScope('company');
+        }
+        // Intentionally only react when role flips to admin
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAdmin]);
+
+    // Fetch teams on mount for Admin
+    useEffect(() => {
+        if (!isAdmin) {
+            setTeams([]);
+            setTeamsError('');
+            setSelectedTeamId('');
+            return;
+        }
+
+        let cancelled = false;
+        setTeamsLoading(true);
+        setTeamsError('');
+
+        getTeams()
+            .then((res) => {
+                if (cancelled) return;
+                setTeams(Array.isArray(res.data?.items) ? res.data.items : []);
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setTeamsError('Không thể tải danh sách team');
+            })
+            .finally(() => {
+                if (!cancelled) setTeamsLoading(false);
+            });
+
+        return () => { cancelled = true; };
+    }, [isAdmin]);
 
     // Generate last 12 months options (GMT+7)
     const monthOptions = useMemo(() => {
@@ -59,13 +105,62 @@ export default function MonthlyReportPage() {
         return options;
     }, [today]);
 
+    const totals = useMemo(() => summary.reduce((acc, row) => {
+        acc.totalWorkdays += row?.totalWorkdays ?? 0;
+        acc.presentDays += row?.presentDays ?? 0;
+        acc.absentDays += row?.absentDays ?? 0;
+        acc.leaveDays += row?.leaveDays ?? 0;
+        acc.annualLeave += row?.leaveByType?.ANNUAL ?? 0;
+        acc.sickLeave += row?.leaveByType?.SICK ?? 0;
+        acc.unpaidLeave += row?.leaveByType?.UNPAID ?? 0;
+        acc.totalWorkMinutes += row?.totalWorkMinutes ?? 0;
+        acc.totalLateCount += row?.totalLateCount ?? 0;
+        acc.totalLateMinutes += row?.totalLateMinutes ?? 0;
+        acc.earlyLeaveCount += row?.earlyLeaveCount ?? 0;
+        acc.approvedOtMinutes += row?.approvedOtMinutes ?? 0;
+        acc.unapprovedOtMinutes += row?.unapprovedOtMinutes ?? 0;
+        return acc;
+    }, {
+        totalWorkdays: 0,
+        presentDays: 0,
+        absentDays: 0,
+        leaveDays: 0,
+        annualLeave: 0,
+        sickLeave: 0,
+        unpaidLeave: 0,
+        totalWorkMinutes: 0,
+        totalLateCount: 0,
+        totalLateMinutes: 0,
+        earlyLeaveCount: 0,
+        approvedOtMinutes: 0,
+        unapprovedOtMinutes: 0
+    }), [summary]);
+
+    const buildReportEndpoint = useCallback((basePath) => {
+        let endpoint = `${basePath}?month=${selectedMonth}&scope=${effectiveScope}`;
+        if (isAdmin && effectiveScope === 'team' && selectedTeamId) {
+            endpoint += `&teamId=${selectedTeamId}`;
+        }
+        return endpoint;
+    }, [selectedMonth, effectiveScope, selectedTeamId, isAdmin]);
+
     // Fetch report data
     const fetchReport = useCallback(async (signal, showLoading = true) => {
         if (showLoading) setLoading(true);
         if (showLoading) setError('');
+
+        if (requiresTeamSelection) {
+            if (showLoading && !signal?.aborted) {
+                setSummary([]);
+                setLoading(false);
+                setError('Vui lòng chọn team để xem báo cáo theo team.');
+            }
+            return;
+        }
+
         try {
             const config = signal ? { signal } : undefined;
-            const endpoint = `/reports/monthly?month=${selectedMonth}&scope=${effectiveScope}`;
+            const endpoint = buildReportEndpoint('/reports/monthly');
             const res = await client.get(endpoint, config);
             setSummary(Array.isArray(res.data?.summary) ? res.data.summary : []);
         } catch (err) {
@@ -77,7 +172,7 @@ export default function MonthlyReportPage() {
                 setLoading(false);
             }
         }
-    }, [selectedMonth, effectiveScope]);
+    }, [buildReportEndpoint, requiresTeamSelection]);
 
     // Fetch on filters change
     useEffect(() => {
@@ -88,11 +183,16 @@ export default function MonthlyReportPage() {
 
     // Handle Excel export (secure Blob download - OWASP A09 compliant)
     const handleExport = async () => {
+        if (requiresTeamSelection) {
+            setError('Vui lòng chọn team trước khi xuất báo cáo.');
+            return;
+        }
+
         setExporting(true);
         setError('');
         try {
             const response = await client.get(
-                `/reports/monthly/export?month=${selectedMonth}&scope=${effectiveScope}`,
+                buildReportEndpoint('/reports/monthly/export'),
                 { responseType: 'blob' }
             );
 
@@ -133,6 +233,41 @@ export default function MonthlyReportPage() {
         return `${(minutes / 60).toFixed(1)}h`;
     };
 
+    const formatDateShort = (dateKey) => {
+        if (!dateKey || typeof dateKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+            return dateKey || '';
+        }
+        const [, month, day] = dateKey.split('-');
+        return `${day}/${month}`;
+    };
+
+    const renderLateCell = (row) => {
+        const lateCount = row?.totalLateCount || 0;
+        const details = Array.isArray(row?.lateDetails) ? row.lateDetails : [];
+        const className = lateCount > 0 ? 'text-red-600 font-medium' : '';
+
+        if (lateCount <= 0 || details.length === 0) {
+            return <span className={className}>{lateCount}</span>;
+        }
+
+        const tooltipContent = (
+            <div className="text-xs space-y-1">
+                {details.map((item, idx) => (
+                    <div key={`${item.date}-${item.checkInTime}-${idx}`} className="flex justify-between gap-3">
+                        <span>{formatDateShort(item.date)} {item.checkInTime}</span>
+                        <span>{item.lateMinutes}p</span>
+                    </div>
+                ))}
+            </div>
+        );
+
+        return (
+            <Tooltip content={tooltipContent} placement="top">
+                <span className={`cursor-help ${className}`}>{lateCount}</span>
+            </Tooltip>
+        );
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -146,8 +281,25 @@ export default function MonthlyReportPage() {
                             onChange={e => setScope(e.target.value)}
                             disabled={loading}
                         >
-                            <option value="team">Team của tôi</option>
+                            <option value="team">Theo team</option>
                             <option value="company">Toàn công ty</option>
+                        </Select>
+                    )}
+
+                    {isAdmin && effectiveScope === 'team' && (
+                        <Select
+                            value={selectedTeamId}
+                            onChange={(e) => setSelectedTeamId(e.target.value)}
+                            disabled={loading || teamsLoading}
+                        >
+                            <option value="">
+                                {teamsLoading ? 'Đang tải team...' : 'Chọn team'}
+                            </option>
+                            {teams.map((team) => (
+                                <option key={team._id} value={team._id}>
+                                    {team.name}
+                                </option>
+                            ))}
                         </Select>
                     )}
 
@@ -168,7 +320,7 @@ export default function MonthlyReportPage() {
                     <Button
                         color="success"
                         onClick={handleExport}
-                        disabled={loading || exporting || summary.length === 0}
+                        disabled={loading || exporting || summary.length === 0 || requiresTeamSelection}
                     >
                         {exporting ? (
                             <>
@@ -190,6 +342,11 @@ export default function MonthlyReportPage() {
                     {error}
                 </Alert>
             )}
+            {teamsError && isAdmin && (
+                <Alert color="warning" onDismiss={() => setTeamsError('')}>
+                    {teamsError}
+                </Alert>
+            )}
 
             <div className="overflow-x-auto bg-white rounded-lg shadow">
                 {loading ? (
@@ -204,10 +361,21 @@ export default function MonthlyReportPage() {
                     <Table striped>
                         <Table.Head>
                             <Table.HeadCell>Mã NV</Table.HeadCell>
-                            <Table.HeadCell>Họ tên</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Tổng giờ làm</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Số ngày đi muộn</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Tổng OT</Table.HeadCell>
+                            <Table.HeadCell>Tên NV</Table.HeadCell>
+                            <Table.HeadCell>Phòng ban</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Ngày công tháng</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Có mặt</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Vắng mặt</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Nghỉ phép</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Phép năm</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Nghỉ ốm</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Không lương</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Giờ làm (h)</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Đi muộn (lần)</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Đi muộn (phút)</Table.HeadCell>
+                            <Table.HeadCell className="text-right">Về sớm (lần)</Table.HeadCell>
+                            <Table.HeadCell className="text-right">OT duyệt (h)</Table.HeadCell>
+                            <Table.HeadCell className="text-right">OT chưa duyệt (h)</Table.HeadCell>
                         </Table.Head>
                         <Table.Body className="divide-y">
                             {summary.map(row => (
@@ -219,20 +387,71 @@ export default function MonthlyReportPage() {
                                         {row.user.name || 'N/A'}
                                     </Table.Cell>
                                     <Table.Cell className="text-right">
+                                        {row.user.teamName || '-'}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.totalWorkdays || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.presentDays || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.absentDays || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.leaveDays || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.leaveByType?.ANNUAL || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.leaveByType?.SICK || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.leaveByType?.UNPAID || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
                                         {formatHours(row.totalWorkMinutes)}
                                     </Table.Cell>
                                     <Table.Cell className="text-right">
-                                        <span className={row.totalLateCount > 0 ? 'text-red-600 font-medium' : ''}>
-                                            {row.totalLateCount || 0}
+                                        {renderLateCell(row)}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.totalLateMinutes || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        {row.earlyLeaveCount || 0}
+                                    </Table.Cell>
+                                    <Table.Cell className="text-right">
+                                        <span className={row.approvedOtMinutes > 0 ? 'text-blue-600 font-medium' : ''}>
+                                            {formatHours(row.approvedOtMinutes)}
                                         </span>
                                     </Table.Cell>
                                     <Table.Cell className="text-right">
-                                        <span className={row.totalOtMinutes > 0 ? 'text-blue-600 font-medium' : ''}>
-                                            {formatHours(row.totalOtMinutes)}
+                                        <span className={row.unapprovedOtMinutes > 0 ? 'text-orange-600 font-medium' : ''}>
+                                            {formatHours(row.unapprovedOtMinutes)}
                                         </span>
                                     </Table.Cell>
                                 </Table.Row>
                             ))}
+                            <Table.Row className="bg-gray-100 font-semibold">
+                                <Table.Cell>TỔNG</Table.Cell>
+                                <Table.Cell>-</Table.Cell>
+                                <Table.Cell className="text-right">-</Table.Cell>
+                                <Table.Cell className="text-right">{totals.totalWorkdays}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.presentDays}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.absentDays}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.leaveDays}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.annualLeave}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.sickLeave}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.unpaidLeave}</Table.Cell>
+                                <Table.Cell className="text-right">{formatHours(totals.totalWorkMinutes)}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.totalLateCount}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.totalLateMinutes}</Table.Cell>
+                                <Table.Cell className="text-right">{totals.earlyLeaveCount}</Table.Cell>
+                                <Table.Cell className="text-right">{formatHours(totals.approvedOtMinutes)}</Table.Cell>
+                                <Table.Cell className="text-right">{formatHours(totals.unapprovedOtMinutes)}</Table.Cell>
+                            </Table.Row>
                         </Table.Body>
                     </Table>
                 )}
