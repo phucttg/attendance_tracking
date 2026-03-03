@@ -121,9 +121,11 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
     let otMinutes = 0;
 
     if (checkIn && checkOut) {
-      // Weekend/holiday OT doesn't need approval (F1 requirement)
-      workMinutes = computeWorkMinutes(dateKey, checkIn, checkOut, true);
-      otMinutes = computeOtMinutes(dateKey, checkOut, true);
+      // Weekend/holiday OT doesn't need approval (F1 requirement):
+      // all worked minutes are treated as OT minutes.
+      const weekendMinutes = computeWeekendOtMinutes(dateKey, checkIn, checkOut);
+      workMinutes = weekendMinutes;
+      otMinutes = weekendMinutes;
     }
     // If checkIn but no checkOut (working now), keep 0 until checkout completes
 
@@ -342,6 +344,20 @@ export function computeOtMinutes(dateKey, checkOutAt, otApproved = false) {
   }
 
   return getMinutesDiff(otThreshold, checkOutAt);
+}
+
+/**
+ * Calculate OT minutes for weekend/holiday attendance.
+ * Rule: Weekend/Holiday OT equals all worked minutes (including lunch rule).
+ *
+ * @param {string} dateKey - Date in "YYYY-MM-DD" format
+ * @param {Date} checkInAt - Check-in timestamp
+ * @param {Date} checkOutAt - Check-out timestamp
+ * @returns {number} OT minutes on weekend/holiday
+ */
+export function computeWeekendOtMinutes(dateKey, checkInAt, checkOutAt) {
+  // Reuse computeWorkMinutes to keep lunch/guard logic in one place.
+  return computeWorkMinutes(dateKey, checkInAt, checkOutAt, true);
 }
 
 /**
