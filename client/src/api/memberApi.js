@@ -50,7 +50,7 @@ export const getTeams = (config) => client.get('/teams', config);
  *   items: [{ 
  *     user: { _id, employeeCode, name, email, ... },
  *     attendance: { date, checkInAt, checkOutAt } | null,
- *     computed: { status, lateMinutes }
+ *     computed: { status, lateMinutes, workMinutes, otMinutes }
  *   }],
  *   pagination: { page, limit, total, totalPages } 
  * }
