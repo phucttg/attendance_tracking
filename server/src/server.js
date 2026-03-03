@@ -2,6 +2,7 @@
 import 'dotenv/config';
 import app from './app.js';
 import connectDB from './config/db.js';
+import { runAutoCloseCatchupOnStartup, startAutoCloseScheduler } from './services/autoCloseService.js';
 
 const PORT = process.env.PORT;
 
@@ -13,7 +14,9 @@ if (!PORT) {
 // Connect to MongoDB first, then start server
 // Pattern: DB must be ready before accepting HTTP requests
 connectDB()
-  .then(() => {
+  .then(async () => {
+    await runAutoCloseCatchupOnStartup();
+    startAutoCloseScheduler();
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
   .catch((err) => {
