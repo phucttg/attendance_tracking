@@ -114,3 +114,16 @@ export const restoreUser = (userId) =>
  */
 export const purgeDeletedUsers = () =>
     client.post('/admin/users/purge');
+
+/**
+ * Get admin queue of open sessions and pending reconciliation sessions.
+ * Roles: ADMIN only
+ *
+ * @param {Object} [params] - Query params
+ * @param {string} [params.status] - all | open | reconciliation
+ * @param {number} [params.limit=100] - Max items to return
+ * @param {Object} [config] - Optional axios config
+ * @returns {Promise} { items: [...] }
+ */
+export const getAdminOpenSessions = (params, config) =>
+    client.get('/admin/attendance/open-sessions', { ...config, params });

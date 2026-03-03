@@ -1,5 +1,12 @@
 import mongoose from 'mongoose';
 
+export const ATTENDANCE_CLOSE_SOURCES = [
+  'USER_CHECKOUT',
+  'SYSTEM_AUTO_MIDNIGHT',
+  'ADJUST_APPROVAL',
+  'ADMIN_FORCE'
+];
+
 const attendanceSchema = new mongoose.Schema(
   {
     userId: {
@@ -30,6 +37,20 @@ const attendanceSchema = new mongoose.Schema(
         message: 'checkOutAt must be after checkInAt'
       }
     },
+    closeSource: {
+      type: String,
+      enum: ATTENDANCE_CLOSE_SOURCES,
+      default: null
+    },
+    closedByRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Request',
+      default: null
+    },
+    needsReconciliation: {
+      type: Boolean,
+      default: false
+    },
     otApproved: {
       type: Boolean,
       default: false
@@ -49,6 +70,7 @@ attendanceSchema.index(
   { userId: 1, checkInAt: -1 },
   { partialFilterExpression: { checkOutAt: null } }
 );
+attendanceSchema.index({ needsReconciliation: 1, date: 1 });
 
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 

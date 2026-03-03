@@ -40,6 +40,6 @@ router.post('/holidays/range', authenticate, holidayController.createHolidayRang
 // Attendance Management (ADMIN only)
 // Force checkout for stale open sessions
 router.post('/attendance/:id/force-checkout', authenticate, attendanceController.forceCheckout);
+router.get('/attendance/open-sessions', authenticate, attendanceController.getAdminOpenSessions);
 
 export default router;
-

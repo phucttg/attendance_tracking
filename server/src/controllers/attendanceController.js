@@ -19,10 +19,35 @@ export const checkIn = async (req, res) => {
     });
   } catch (error) {
     const statusCode = error.statusCode || 500;
+    if (statusCode < 500 && error?.payload) {
+      return res.status(statusCode).json({
+        message: error.message || 'Failed to check in',
+        code: error.code || null,
+        ...error.payload
+      });
+    }
     // OWASP A09: Don't expose internal error details for 5xx errors
     const message = statusCode < 500
       ? (error.message || 'Failed to check in')
       : 'Failed to check in';
+    return res.status(statusCode).json({ message });
+  }
+};
+
+/**
+ * GET /api/attendance/open-session
+ * Return open-session + forgot-checkout reconciliation context for current user.
+ */
+export const getOpenSession = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const context = await attendanceService.getOpenSessionContext(userId);
+    return res.status(200).json(context);
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    const message = statusCode < 500
+      ? (error.message || 'Failed to fetch open session context')
+      : 'Failed to fetch open session context';
     return res.status(statusCode).json({ message });
   }
 };
@@ -302,5 +327,32 @@ export const forceCheckout = async (req, res) => {
     return res.status(statusCode).json({
       message: responseMessage
     });
+  }
+};
+
+/**
+ * GET /api/admin/attendance/open-sessions?status=all|open|reconciliation&limit=100
+ * Admin queue for open sessions and pending reconciliation sessions.
+ */
+export const getAdminOpenSessions = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        message: 'Insufficient permissions. Admin required.'
+      });
+    }
+
+    const status = typeof req.query.status === 'string' ? req.query.status : 'all';
+    const rawLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(rawLimit) ? rawLimit : 100;
+
+    const items = await attendanceService.getAdminOpenSessionsQueue({ status, limit });
+    return res.status(200).json({ items });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    const message = statusCode < 500
+      ? (error.message || 'Failed to fetch open sessions queue')
+      : 'Internal server error';
+    return res.status(statusCode).json({ message });
   }
 };
