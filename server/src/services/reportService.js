@@ -360,7 +360,8 @@ function computeUserMonthlySummary(records, holidayDates) {
         }
 
         // H2: Track Approved vs Unapproved OT
-        if (record.otApproved) {
+        // Weekend/holiday attendance does not require explicit OT approval.
+        if (record.otApproved || isWeekend(record.date) || holidayDates.has(record.date)) {
             // Approved: use computed OT (already > 0 because otApproved = true)
             approvedOtMinutes += computed.otMinutes || 0;
         } else {
