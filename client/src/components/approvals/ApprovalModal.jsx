@@ -1,4 +1,4 @@
-import { Modal, Button, Alert, Spinner } from 'flowbite-react';
+import { Modal, Button, Alert, Spinner, Textarea } from 'flowbite-react';
 
 /**
  * Confirmation modal for approve/reject actions.
@@ -10,6 +10,8 @@ import { Modal, Button, Alert, Spinner } from 'flowbite-react';
  * @param {string} props.action - 'approve' | 'reject'
  * @param {boolean} props.loading - During action
  * @param {string} props.error - Error message
+ * @param {string} props.rejectReason - Reject reason text (optional)
+ * @param {Function} props.onRejectReasonChange - (value: string) => void
  * @param {Function} props.onConfirm - () => void
  * @param {Function} props.onClose - () => void
  */
@@ -19,6 +21,8 @@ export default function ApprovalModal({
     action,
     loading,
     error,
+    rejectReason,
+    onRejectReasonChange,
     onConfirm,
     onClose
 }) {
@@ -168,6 +172,23 @@ export default function ApprovalModal({
                             </>
                         )}
                     </div>
+
+                    {!isApprove && (
+                        <div className="space-y-2">
+                            <label htmlFor="reject-reason" className="block text-sm font-medium text-gray-700">
+                                Lý do từ chối (tùy chọn)
+                            </label>
+                            <Textarea
+                                id="reject-reason"
+                                rows={3}
+                                value={rejectReason ?? ''}
+                                onChange={(event) => onRejectReasonChange?.(event.target.value)}
+                                placeholder="Nhập lý do từ chối..."
+                                disabled={loading}
+                                maxLength={500}
+                            />
+                        </div>
+                    )}
                 </div>
             </Modal.Body>
             <Modal.Footer>
