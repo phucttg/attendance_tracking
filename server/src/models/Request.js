@@ -181,6 +181,12 @@ const requestSchema = new mongoose.Schema(
       type: String,
       default: null,
       trim: true
+    },
+    rejectReason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 500
     }
   },
   { timestamps: true }
@@ -467,6 +473,9 @@ requestSchema.pre('validate', function() {
 
 // Efficient querying for user's requests and status filtering
 requestSchema.index({ userId: 1, status: 1 });
+// Approval history sorting (newest processed first)
+requestSchema.index({ status: 1, approvedAt: -1 });
+requestSchema.index({ userId: 1, status: 1, approvedAt: -1 });
 
 // P2 Fix: Unique index now uses checkInDate (primary key for cross-midnight)
 // Prevents duplicate PENDING requests for same (userId, checkInDate, type)
