@@ -195,7 +195,7 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         userId: { $in: userIds },
         date: { $gte: monthStart, $lte: monthEnd }
     })
-        .select('userId date checkInAt checkOutAt otApproved')
+        .select('userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes')
         .sort({ date: 1, checkInAt: 1 })
         .lean();
 
@@ -331,7 +331,9 @@ function computeUserMonthlySummary(records, holidayDates) {
                 date: record.date,
                 checkInAt: record.checkInAt,
                 checkOutAt: record.checkOutAt,
-                otApproved: record.otApproved
+                otApproved: record.otApproved,
+                otMode: record.otMode,
+                separatedOtMinutes: record.separatedOtMinutes
             },
             holidayDates,
             new Set()  // Phase 3: Pass empty leaveDates (aggregates don't count leave days)
