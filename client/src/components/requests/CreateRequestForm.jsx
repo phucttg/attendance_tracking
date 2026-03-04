@@ -23,6 +23,8 @@ const createInitialDraft = (today) => ({
     leaveType: 'ANNUAL',
     reason: '',
     estimatedEndTime: '',
+    otMode: 'CONTINUOUS',
+    otStartTime: '',
 });
 
 /**
@@ -37,6 +39,8 @@ const applyTypeSwitch = (prevDraft, nextType, today) => {
             checkInTime: '',
             checkOutTime: '',
             estimatedEndTime: '',
+            otMode: 'CONTINUOUS',
+            otStartTime: '',
         };
     }
 
@@ -51,6 +55,8 @@ const applyTypeSwitch = (prevDraft, nextType, today) => {
             leaveEndDate: today,
             leaveType: 'ANNUAL',
             estimatedEndTime: '',
+            otMode: 'CONTINUOUS',
+            otStartTime: '',
         };
     }
 
@@ -61,6 +67,8 @@ const applyTypeSwitch = (prevDraft, nextType, today) => {
         leaveEndDate: today,
         leaveType: 'ANNUAL',
         estimatedEndTime: '',
+        otMode: 'CONTINUOUS',
+        otStartTime: '',
     };
 };
 
