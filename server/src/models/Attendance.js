@@ -54,6 +54,15 @@ const attendanceSchema = new mongoose.Schema(
     otApproved: {
       type: Boolean,
       default: false
+    },
+    otMode: {
+      type: String,
+      enum: ['CONTINUOUS', 'SEPARATED'],
+      default: null
+    },
+    separatedOtMinutes: {
+      type: Number,
+      default: null
     }
   },
   { timestamps: true }
