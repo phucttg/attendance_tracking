@@ -44,4 +44,34 @@ describe('Request model - OT cross-midnight validation', () => {
 
     await expect(doc.validate()).rejects.toThrow(/minimum end time/);
   });
+
+  it('accepts separated OT when start/end window is valid', async () => {
+    const doc = new Request(buildOtDoc({
+      otMode: 'SEPARATED',
+      otStartTime: new Date('2026-03-02T22:00:00+07:00'),
+      estimatedEndTime: new Date('2026-03-03T01:00:00+07:00')
+    }));
+
+    await expect(doc.validate()).resolves.toBeUndefined();
+  });
+
+  it('rejects separated OT without otStartTime', async () => {
+    const doc = new Request(buildOtDoc({
+      otMode: 'SEPARATED',
+      otStartTime: null,
+      estimatedEndTime: new Date('2026-03-03T01:00:00+07:00')
+    }));
+
+    await expect(doc.validate()).rejects.toThrow(/otStartTime is required/i);
+  });
+
+  it('rejects separated OT shorter than 30 minutes', async () => {
+    const doc = new Request(buildOtDoc({
+      otMode: 'SEPARATED',
+      otStartTime: new Date('2026-03-02T22:00:00+07:00'),
+      estimatedEndTime: new Date('2026-03-02T22:20:00+07:00')
+    }));
+
+    await expect(doc.validate()).rejects.toThrow(/at least 30 minutes/i);
+  });
 });
