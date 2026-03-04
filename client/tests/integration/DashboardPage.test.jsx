@@ -16,7 +16,7 @@
  * IMPORTANT: All dates are DYNAMIC to avoid "flaky tests"
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -50,6 +50,78 @@ describe('DashboardPage - Integration Tests', () => {
         const today = getTodayStr();
         const pad = (n) => String(n).padStart(2, '0');
         return `${today}T${pad(hour)}:${pad(minute)}:00+07:00`;
+    };
+
+    // Get date string N days before a date key (YYYY-MM-DD)
+    const minusDays = (dateKey, days) => {
+        const [y, m, d] = dateKey.split('-').map(Number);
+        const date = new Date(Date.UTC(y, m - 1, d - days));
+        return date.toISOString().slice(0, 10);
+    };
+
+    // Get ISO string for a specific time on a given date key (GMT+7)
+    const getIsoAtDate = (dateKey, hour, minute) => {
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${dateKey}T${pad(hour)}:${pad(minute)}:00+07:00`;
+    };
+
+    const getPreviousMonthDate = (dateKey) => {
+        const [year, month] = dateKey.slice(0, 7).split('-').map(Number);
+        const previousMonth = month === 1 ? 12 : month - 1;
+        const previousYear = month === 1 ? year - 1 : year;
+        return `${previousYear}-${String(previousMonth).padStart(2, '0')}-28`;
+    };
+
+    const makeTodayEmptyRecord = () => ({
+        date: today,
+        checkInAt: null,
+        checkOutAt: null,
+        lateMinutes: 0,
+        workMinutes: 0,
+        otMinutes: 0,
+        otApproved: false,
+    });
+
+    const makeOpenSessionContext = (date, checkInAt) => ({
+        openSessionCount: 1,
+        hasAnomaly: false,
+        openSession: {
+            attendanceId: 'att-open-1',
+            date,
+            checkInAt,
+        },
+        needsReconciliationCount: 0,
+        needsReconciliation: [],
+    });
+
+    const emptyOpenSessionContext = () => ({
+        openSessionCount: 0,
+        hasAnomaly: false,
+        openSession: null,
+        needsReconciliationCount: 0,
+        needsReconciliation: [],
+    });
+
+    const setupDashboardGetMocks = ({
+        currentMonthItems,
+        openSessionContext,
+        extraMonthItems = {},
+    }) => {
+        client.get.mockImplementation((url) => {
+            if (url.startsWith('/attendance/me?month=')) {
+                const month = url.slice('/attendance/me?month='.length);
+                if (month === currentMonth) {
+                    return Promise.resolve({ data: { items: currentMonthItems } });
+                }
+                return Promise.resolve({
+                    data: { items: Array.isArray(extraMonthItems[month]) ? extraMonthItems[month] : [] }
+                });
+            }
+            if (url === '/attendance/open-session') {
+                return Promise.resolve({ data: openSessionContext });
+            }
+            return Promise.reject(new Error(`Unexpected GET: ${url}`));
+        });
     };
 
     // Current values for this test run
@@ -384,6 +456,263 @@ describe('DashboardPage - Integration Tests', () => {
             await waitFor(() => {
                 expect(screen.queryByRole('alert')).not.toBeInTheDocument();
             });
+        });
+    });
+
+    describe('6. Cross-Midnight Fact Check', () => {
+        it('[DASH-CM-01] approved cross-midnight session shows check-out button', async () => {
+            const yesterday = minusDays(today, 1);
+            const yesterdayMonth = yesterday.slice(0, 7);
+            const todayEmpty = makeTodayEmptyRecord();
+            const yesterdayApprovedRecord = {
+                date: yesterday,
+                checkInAt: getIsoAtDate(yesterday, 8, 0),
+                checkOutAt: null,
+                lateMinutes: 0,
+                workMinutes: 0,
+                otMinutes: 0,
+                otApproved: true,
+            };
+
+            const currentMonthItems = [todayEmpty];
+            const extraMonthItems = {};
+            if (yesterdayMonth === currentMonth) {
+                currentMonthItems.push(yesterdayApprovedRecord);
+            } else {
+                extraMonthItems[yesterdayMonth] = [yesterdayApprovedRecord];
+            }
+
+            setupDashboardGetMocks({
+                currentMonthItems,
+                openSessionContext: makeOpenSessionContext(yesterday, getIsoAtDate(yesterday, 8, 0)),
+                extraMonthItems,
+            });
+
+            render(
+                <MemoryRouter>
+                    <DashboardPage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.queryByRole('status')).not.toBeInTheDocument();
+            });
+
+            expect(screen.getByRole('button', { name: /check-out/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /check-in/i })).not.toBeInTheDocument();
+            expect(screen.getByText(/đang làm việc/i)).toBeInTheDocument();
+        });
+
+        it('[DASH-CM-02] approved cross-midnight checkout shows success feedback and returns to today not-checked-in', async () => {
+            const user = userEvent.setup();
+            const yesterday = minusDays(today, 1);
+            const yesterdayMonth = yesterday.slice(0, 7);
+            const todayEmpty = makeTodayEmptyRecord();
+            const yesterdayApprovedRecord = {
+                date: yesterday,
+                checkInAt: getIsoAtDate(yesterday, 8, 0),
+                checkOutAt: null,
+                lateMinutes: 0,
+                workMinutes: 0,
+                otMinutes: 0,
+                otApproved: true,
+            };
+
+            const currentMonthItems = [todayEmpty];
+            const extraMonthItems = {};
+            if (yesterdayMonth === currentMonth) {
+                currentMonthItems.push(yesterdayApprovedRecord);
+            } else {
+                extraMonthItems[yesterdayMonth] = [yesterdayApprovedRecord];
+            }
+
+            let openSessionContext = makeOpenSessionContext(yesterday, getIsoAtDate(yesterday, 8, 0));
+            client.get.mockImplementation((url) => {
+                if (url.startsWith('/attendance/me?month=')) {
+                    const month = url.slice('/attendance/me?month='.length);
+                    if (month === currentMonth) {
+                        return Promise.resolve({ data: { items: currentMonthItems } });
+                    }
+                    return Promise.resolve({
+                        data: { items: Array.isArray(extraMonthItems[month]) ? extraMonthItems[month] : [] }
+                    });
+                }
+                if (url === '/attendance/open-session') {
+                    return Promise.resolve({ data: openSessionContext });
+                }
+                return Promise.reject(new Error(`Unexpected GET: ${url}`));
+            });
+            client.post.mockImplementation((url) => {
+                if (url === '/attendance/check-out') {
+                    openSessionContext = emptyOpenSessionContext();
+                    return Promise.resolve({ data: { message: 'Checked out' } });
+                }
+                return Promise.reject(new Error(`Unexpected POST: ${url}`));
+            });
+
+            render(
+                <MemoryRouter>
+                    <DashboardPage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.queryByRole('status')).not.toBeInTheDocument();
+            });
+
+            await user.click(screen.getByRole('button', { name: /check-out/i }));
+
+            await waitFor(() => {
+                expect(client.post).toHaveBeenCalledWith('/attendance/check-out');
+            });
+
+            await waitFor(() => {
+                expect(screen.getByText('Đã check-out ca OT ngày trước')).toBeInTheDocument();
+            });
+
+            await waitFor(() => {
+                expect(screen.getByRole('button', { name: /check-in/i })).toBeInTheDocument();
+            });
+            expect(screen.queryByRole('button', { name: /check-out/i })).not.toBeInTheDocument();
+            expect(screen.getByText(/chưa check-in/i)).toBeInTheDocument();
+        });
+
+        it('[DASH-CM-03] unapproved cross-midnight session remains unchanged (shows check-in)', async () => {
+            const yesterday = minusDays(today, 1);
+            const yesterdayMonth = yesterday.slice(0, 7);
+            const todayEmpty = makeTodayEmptyRecord();
+            const yesterdayUnapprovedRecord = {
+                date: yesterday,
+                checkInAt: getIsoAtDate(yesterday, 8, 0),
+                checkOutAt: null,
+                lateMinutes: 0,
+                workMinutes: 0,
+                otMinutes: 0,
+                otApproved: false,
+            };
+
+            const currentMonthItems = [todayEmpty];
+            const extraMonthItems = {};
+            if (yesterdayMonth === currentMonth) {
+                currentMonthItems.push(yesterdayUnapprovedRecord);
+            } else {
+                extraMonthItems[yesterdayMonth] = [yesterdayUnapprovedRecord];
+            }
+
+            setupDashboardGetMocks({
+                currentMonthItems,
+                openSessionContext: makeOpenSessionContext(yesterday, getIsoAtDate(yesterday, 8, 0)),
+                extraMonthItems,
+            });
+
+            render(
+                <MemoryRouter>
+                    <DashboardPage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.queryByRole('status')).not.toBeInTheDocument();
+            });
+
+            expect(screen.queryByRole('button', { name: /check-out/i })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /check-in/i })).toBeInTheDocument();
+            expect(screen.getByText(/chưa check-in/i)).toBeInTheDocument();
+        });
+
+        it('[DASH-CM-04] unapproved cross-midnight check-in attempt is still blocked by backend', async () => {
+            const user = userEvent.setup();
+            const yesterday = minusDays(today, 1);
+            const yesterdayMonth = yesterday.slice(0, 7);
+            const todayEmpty = makeTodayEmptyRecord();
+            const yesterdayUnapprovedRecord = {
+                date: yesterday,
+                checkInAt: getIsoAtDate(yesterday, 8, 0),
+                checkOutAt: null,
+                lateMinutes: 0,
+                workMinutes: 0,
+                otMinutes: 0,
+                otApproved: false,
+            };
+
+            const currentMonthItems = [todayEmpty];
+            const extraMonthItems = {};
+            if (yesterdayMonth === currentMonth) {
+                currentMonthItems.push(yesterdayUnapprovedRecord);
+            } else {
+                extraMonthItems[yesterdayMonth] = [yesterdayUnapprovedRecord];
+            }
+
+            setupDashboardGetMocks({
+                currentMonthItems,
+                openSessionContext: makeOpenSessionContext(yesterday, getIsoAtDate(yesterday, 8, 0)),
+                extraMonthItems,
+            });
+
+            client.post.mockRejectedValue({
+                response: {
+                    data: {
+                        message: `You have an open session from ${yesterday}. Please checkout first.`,
+                    }
+                }
+            });
+
+            render(
+                <MemoryRouter>
+                    <DashboardPage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.getByRole('button', { name: /check-in/i })).toBeInTheDocument();
+            });
+
+            await user.click(screen.getByRole('button', { name: /check-in/i }));
+
+            await waitFor(() => {
+                expect(client.post).toHaveBeenCalledWith('/attendance/check-in');
+            });
+
+            const alert = await screen.findByRole('alert');
+            expect(alert).toHaveTextContent(`open session from ${yesterday}`);
+        });
+
+        it('[DASH-CM-05] month boundary: approved open session from previous month still shows check-out', async () => {
+            const previousMonthDate = getPreviousMonthDate(today);
+            const previousMonth = previousMonthDate.slice(0, 7);
+            const todayEmpty = makeTodayEmptyRecord();
+            const previousMonthApprovedRecord = {
+                date: previousMonthDate,
+                checkInAt: getIsoAtDate(previousMonthDate, 8, 0),
+                checkOutAt: null,
+                lateMinutes: 0,
+                workMinutes: 0,
+                otMinutes: 0,
+                otApproved: true,
+            };
+
+            setupDashboardGetMocks({
+                currentMonthItems: [todayEmpty],
+                openSessionContext: makeOpenSessionContext(previousMonthDate, getIsoAtDate(previousMonthDate, 8, 0)),
+                extraMonthItems: {
+                    [previousMonth]: [previousMonthApprovedRecord],
+                },
+            });
+
+            render(
+                <MemoryRouter>
+                    <DashboardPage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.getByRole('button', { name: /check-out/i })).toBeInTheDocument();
+            });
+
+            const hasPreviousMonthFetch = client.get.mock.calls.some(([url]) =>
+                url === `/attendance/me?month=${previousMonth}`
+            );
+            expect(hasPreviousMonthFetch).toBe(true);
         });
     });
 });
