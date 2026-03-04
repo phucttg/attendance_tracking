@@ -11,6 +11,7 @@ router.get('/me', authenticate, requestController.getMyRequests);
 
 // Only Manager and Admin can view pending requests and approve/reject
 router.get('/pending', authenticate, authorize('MANAGER', 'ADMIN'), requestController.getPendingRequests);
+router.get('/history', authenticate, authorize('MANAGER', 'ADMIN'), requestController.getApprovalHistory);
 router.post('/:id/approve', authenticate, authorize('MANAGER', 'ADMIN'), requestController.approveRequest);
 router.post('/:id/reject', authenticate, authorize('MANAGER', 'ADMIN'), requestController.rejectRequest);
 

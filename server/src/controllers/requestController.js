@@ -202,6 +202,50 @@ export const getPendingRequests = async (req, res) => {
 };
 
 /**
+ * GET /api/requests/history
+ * Get approval/rejection history (Manager: team only, Admin: company-wide) with pagination
+ */
+export const getApprovalHistory = async (req, res) => {
+  try {
+    const user = req.user;
+
+    // Step 1: Parse pagination params
+    const { page, limit } = parsePaginationParams(req.query);
+
+    // Optional status filter from query (normalize and validate)
+    const status = req.query.status?.trim().toUpperCase() || null;
+    if (status && !['APPROVED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({
+        message: 'Invalid status. Must be APPROVED or REJECTED'
+      });
+    }
+
+    // Step 2: Get total count (1 DB call)
+    const total = await requestService.countApprovalHistory(user, { status });
+
+    // Step 3: Clamp page to valid range and calculate skip
+    const { page: clampedPage, skip } = clampPage(page, total, limit);
+
+    // Step 4: Query items with CLAMPED skip (1 DB call)
+    const items = await requestService.getApprovalHistory(user, {
+      skip,
+      limit,
+      status
+    });
+
+    // Step 5: Build paginated response
+    return res.status(200).json(
+      buildPaginatedResponse(items, total, clampedPage, limit)
+    );
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      message: error.message || 'Failed to fetch approval history'
+    });
+  }
+};
+
+/**
  * POST /api/requests/:id/approve
  * Approve a request and update attendance
  */
@@ -235,12 +279,25 @@ export const rejectRequest = async (req, res) => {
   try {
     const requestId = req.params.id;
     const approver = req.user;
+    const rawRejectReason = req.body?.rejectReason;
 
     if (!requestId) {
       return res.status(400).json({ message: 'Request ID is required' });
     }
 
-    const request = await requestService.rejectRequest(requestId, approver);
+    let rejectReason = null;
+    if (rawRejectReason !== undefined) {
+      if (typeof rawRejectReason !== 'string') {
+        return res.status(400).json({ message: 'rejectReason must be a string' });
+      }
+      const trimmedRejectReason = rawRejectReason.trim();
+      if (trimmedRejectReason.length > 500) {
+        return res.status(400).json({ message: 'rejectReason cannot exceed 500 characters' });
+      }
+      rejectReason = trimmedRejectReason.length > 0 ? trimmedRejectReason : null;
+    }
+
+    const request = await requestService.rejectRequest(requestId, approver, rejectReason);
 
     return res.status(200).json({
       request
