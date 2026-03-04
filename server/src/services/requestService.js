@@ -166,6 +166,47 @@ const buildPendingFilter = async (user) => {
   return filter;
 };
 
+/**
+ * Build RBAC filter for approval history.
+ * Shared by both count and query functions.
+ *
+ * History includes APPROVED + REJECTED requests only.
+ * Manager scope is based on current team membership and intentionally keeps
+ * inactive/soft-deleted users for audit visibility.
+ *
+ * @param {Object} user - Current user (req.user)
+ * @param {Object} options - { status }
+ * @returns {Promise<Object>} MongoDB query filter
+ */
+const buildHistoryFilter = async (user, options = {}) => {
+  const { status } = options;
+
+  const normalizedStatus = status?.toUpperCase();
+  const statuses = ['APPROVED', 'REJECTED'];
+  const filter = {
+    status: normalizedStatus && statuses.includes(normalizedStatus)
+      ? normalizedStatus
+      : { $in: statuses }
+  };
+
+  // RBAC: Manager only sees team members' requests
+  if (user.role === 'MANAGER') {
+    if (!user.teamId) {
+      const error = new Error('Manager must be assigned to a team');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    // Keep full audit trail: no isActive/deletedAt filtering for history scope.
+    const teamMembers = await User.find({ teamId: user.teamId }).select('_id');
+    const teamMemberIds = teamMembers.map(member => member._id);
+    filter.userId = { $in: teamMemberIds };
+  }
+
+  // ADMIN sees all history requests (no additional filter)
+  return filter;
+};
+
 const attachOtPreview = (requestDoc) => {
   if (!requestDoc || requestDoc.type !== 'OT_REQUEST') {
     return requestDoc;
@@ -282,6 +323,43 @@ export const getPendingRequests = async (user, options = {}) => {
     const mapKey = `${userId}|${dateKey}`;
     otReq.attendance = attendanceMap.get(mapKey) || null;
   }
+
+  return requests.map(attachOtPreview);
+};
+
+/**
+ * Count approval history with RBAC scope enforcement.
+ * Used for pagination total count.
+ *
+ * @param {Object} user - Current user (req.user)
+ * @param {Object} options - { status }
+ * @returns {Promise<number>} Total count
+ */
+export const countApprovalHistory = async (user, options = {}) => {
+  const filter = await buildHistoryFilter(user, options);
+  return Request.countDocuments(filter);
+};
+
+/**
+ * Get approval history with RBAC scope enforcement and pagination.
+ * MANAGER: requests from users in same team (including inactive/deleted users)
+ * ADMIN: all approved/rejected requests company-wide
+ *
+ * @param {Object} user - Current user (req.user)
+ * @param {Object} options - { skip, limit, status }
+ * @returns {Promise<Array>} Array of history requests
+ */
+export const getApprovalHistory = async (user, options = {}) => {
+  const { skip = 0, limit = 20, status } = options;
+  const filter = await buildHistoryFilter(user, { status });
+
+  const requests = await Request.find(filter)
+    .populate('userId', 'name employeeCode email teamId')
+    .populate('approvedBy', 'name employeeCode')
+    .sort({ approvedAt: -1, updatedAt: -1, createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
 
   return requests.map(attachOtPreview);
 };
@@ -764,10 +842,11 @@ export const approveRequest = async (requestId, approver) => {
  * 
  * @param {string} requestId - Request's ObjectId
  * @param {Object} rejector - Rejector user object (req.user)
+ * @param {string|null} rejectReason - Optional manager-provided reject reason
  * @param {Object|null} session - MongoDB session for transaction (null for standalone)
  * @returns {Promise<Object>} Updated request
  */
-async function rejectRequestCore(requestId, rejector, session) {
+async function rejectRequestCore(requestId, rejector, rejectReason, session) {
   // STEP 1: Fetch request (with or without session)
   // Fix #5: Populate isActive and deletedAt to validate user status
   const query = Request.findById(requestId).populate('userId', 'teamId isActive deletedAt');
@@ -825,7 +904,8 @@ async function rejectRequestCore(requestId, rejector, session) {
   const setFields = {
     status: 'REJECTED',
     approvedBy: rejector._id,
-    approvedAt: new Date()
+    approvedAt: new Date(),
+    rejectReason: rejectReason ?? null
   };
   if (existingRequest.type === 'OT_REQUEST') {
     setFields.isOtSlotActive = false;
@@ -865,9 +945,10 @@ async function rejectRequestCore(requestId, rejector, session) {
  * 
  * @param {string} requestId - Request's ObjectId
  * @param {Object} rejector - Rejector user object (req.user)
+ * @param {string|null} rejectReason - Optional manager-provided reject reason
  * @returns {Promise<Object>} Updated request
  */
-export const rejectRequest = async (requestId, rejector) => {
+export const rejectRequest = async (requestId, rejector, rejectReason = null) => {
   // Validate request ID format
   if (!mongoose.Types.ObjectId.isValid(requestId)) {
     const error = new Error('Invalid request ID');
@@ -880,7 +961,7 @@ export const rejectRequest = async (requestId, rejector) => {
     const session = await mongoose.startSession();
     try {
       const result = await session.withTransaction(async () => {
-        return await rejectRequestCore(requestId, rejector, session);
+        return await rejectRequestCore(requestId, rejector, rejectReason, session);
       }, getTransactionOptions());
       return result;
     } finally {
@@ -890,7 +971,7 @@ export const rejectRequest = async (requestId, rejector) => {
   
   // PATH B: Standalone → Direct execution
   else {
-    return await rejectRequestCore(requestId, rejector, null);
+    return await rejectRequestCore(requestId, rejector, rejectReason, null);
   }
 };
 
