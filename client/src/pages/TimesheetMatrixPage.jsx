@@ -261,7 +261,7 @@ export default function TimesheetMatrixPage() {
                 </div>
             )}
 
-            <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <div className="bg-white rounded-lg shadow">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <Spinner size="lg" />
@@ -271,37 +271,39 @@ export default function TimesheetMatrixPage() {
                         Không có dữ liệu chấm công cho tháng này
                     </div>
                 ) : (
-                    <Table hoverable>
-                        <Table.Head>
-                            <Table.HeadCell className="whitespace-nowrap min-w-[200px] sticky left-0 bg-gray-50 z-10">
-                                Nhân viên
-                            </Table.HeadCell>
-                            {data.days.map(day => (
-                                <Table.HeadCell key={day} className="text-center w-8 px-1">
-                                    {day}
+                    <div className="max-h-[min(70vh,44rem)] overflow-auto overscroll-contain">
+                        <Table hoverable>
+                            <Table.Head>
+                                <Table.HeadCell className="whitespace-nowrap min-w-[200px] sticky top-0 left-0 bg-gray-50 z-40 border-r">
+                                    Nhân viên
                                 </Table.HeadCell>
-                            ))}
-                        </Table.Head>
-                        <Table.Body className="divide-y">
-                            {data.rows.map(row => (
-                                <Table.Row key={row.user._id} className="bg-white">
-                                    <Table.Cell className="whitespace-nowrap font-medium text-gray-900 sticky left-0 bg-white z-10 border-r">
-                                        <div>{row.user.name}</div>
-                                        <div className="text-xs text-gray-500">{row.user.employeeCode}</div>
-                                    </Table.Cell>
-                                    {row.cells.map((cell, idx) => (
-                                        <Table.Cell
-                                            key={cell.date || idx}
-                                            className={`text-center text-xs p-1 h-10 w-8 border ${getStatusColor(cell.status)}`}
-                                            title={`${cell.date}: ${cell.status || 'N/A'}`}
-                                        >
-                                            {getStatusAbbr(cell.status)}
+                                {data.days.map(day => (
+                                    <Table.HeadCell key={day} className="sticky top-0 z-30 bg-gray-50 text-center w-8 px-1">
+                                        {day}
+                                    </Table.HeadCell>
+                                ))}
+                            </Table.Head>
+                            <Table.Body className="divide-y">
+                                {data.rows.map(row => (
+                                    <Table.Row key={row.user._id} className="bg-white">
+                                        <Table.Cell className="whitespace-nowrap font-medium text-gray-900 sticky left-0 bg-white z-20 border-r">
+                                            <div>{row.user.name}</div>
+                                            <div className="text-xs text-gray-500">{row.user.employeeCode}</div>
                                         </Table.Cell>
-                                    ))}
-                                </Table.Row>
-                            ))}
-                        </Table.Body>
-                    </Table>
+                                        {row.cells.map((cell, idx) => (
+                                            <Table.Cell
+                                                key={cell.date || idx}
+                                                className={`text-center text-xs p-1 h-10 w-8 border ${getStatusColor(cell.status)}`}
+                                                title={`${cell.date}: ${cell.status || 'N/A'}`}
+                                            >
+                                                {getStatusAbbr(cell.status)}
+                                            </Table.Cell>
+                                        ))}
+                                    </Table.Row>
+                                ))}
+                            </Table.Body>
+                        </Table>
+                    </div>
                 )}
             </div>
 
