@@ -172,6 +172,19 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
         return <Badge color="indigo">Điều chỉnh</Badge>;
     };
 
+    const getRejectReasonDisplay = (request) => {
+        if (request?.status === 'REJECTED') {
+            return request.rejectReason || request.systemRejectReason || '—';
+        }
+        if (request?.status === 'PENDING') {
+            return 'Đang chờ duyệt';
+        }
+        if (request?.status === 'APPROVED') {
+            return 'Không áp dụng';
+        }
+        return '—';
+    };
+
     /**
      * Handle OT cancellation
      */
@@ -201,117 +214,127 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
     return (
         <>
             <div className="overflow-x-auto">
-                <Table striped>
-                    <Table.Head>
-                        <Table.HeadCell>Loại</Table.HeadCell>
-                        <Table.HeadCell>Ngày / Khoảng</Table.HeadCell>
-                        <Table.HeadCell>Chi tiết</Table.HeadCell>
-                        <Table.HeadCell>Lý do</Table.HeadCell>
-                        <Table.HeadCell>Trạng thái</Table.HeadCell>
-                        <Table.HeadCell>Tạo lúc</Table.HeadCell>
-                        <Table.HeadCell>Thao tác</Table.HeadCell>
-                    </Table.Head>
-                    <Table.Body className="divide-y">
-                        {isEmpty ? (
-                            <Table.Row>
-                                <Table.Cell colSpan={7} className="text-center py-8 text-gray-500">
-                                    Bạn chưa có yêu cầu nào
-                                </Table.Cell>
-                            </Table.Row>
-                        ) : (
-                            safeRequests.map((req) => (
-                                <Table.Row key={req._id} className="bg-white">
-                                    {/* Type Badge */}
-                                    <Table.Cell>
-                                        {getTypeBadge(req.type)}
+                <div className="max-h-[32rem] overflow-y-auto md:max-h-[60vh]">
+                    <Table striped>
+                        <Table.Head>
+                            <Table.HeadCell>Loại</Table.HeadCell>
+                            <Table.HeadCell>Ngày / Khoảng</Table.HeadCell>
+                            <Table.HeadCell>Chi tiết</Table.HeadCell>
+                            <Table.HeadCell>Lý do</Table.HeadCell>
+                            <Table.HeadCell>Trạng thái</Table.HeadCell>
+                            <Table.HeadCell>Tạo lúc</Table.HeadCell>
+                            <Table.HeadCell>Lý do từ chối</Table.HeadCell>
+                        </Table.Head>
+                        <Table.Body className="divide-y">
+                            {isEmpty ? (
+                                <Table.Row>
+                                    <Table.Cell colSpan={7} className="text-center py-8 text-gray-500">
+                                        Bạn chưa có yêu cầu nào
                                     </Table.Cell>
+                                </Table.Row>
+                            ) : (
+                                safeRequests.map((req) => {
+                                    const rejectReasonDisplay = getRejectReasonDisplay(req);
 
-                                    {/* Date / Range */}
-                                    <Table.Cell className="font-medium whitespace-nowrap">
-                                        {req.type === 'LEAVE' ? (
-                                            <span>
-                                                {formatDate(req.leaveStartDate)} → {formatDate(req.leaveEndDate)}
-                                            </span>
-                                        ) : (
-                                            formatDate(req.date)
-                                        )}
-                                    </Table.Cell>
+                                    return (
+                                        <Table.Row key={req._id} className="bg-white">
+                                            {/* Type Badge */}
+                                            <Table.Cell>
+                                                {getTypeBadge(req.type)}
+                                            </Table.Cell>
 
-                                    {/* Details (Time or Leave Type + Days or OT Info) */}
-                                    <Table.Cell className="whitespace-nowrap">
-                                        {req.type === 'LEAVE' ? (
-                                            <div className="flex flex-col gap-1">
-                                                <Badge color="blue" size="sm">
-                                                    {getLeaveTypeLabel(req.leaveType)}
-                                                </Badge>
-                                                <span className="text-xs text-gray-600">
-                                                    {req.leaveDaysCount ?? 0} ngày làm việc
-                                                </span>
-                                            </div>
-                                        ) : req.type === 'OT_REQUEST' ? (
-                                            <div className="text-sm space-y-1">
-                                                <div>
-                                                    <span className="text-gray-600">⏰ Dự kiến về:</span>
-                                                    <span className="ml-2 font-medium">
-                                                        {formatOtEndTime(req.estimatedEndTime, req.date)}
+                                            {/* Date / Range */}
+                                            <Table.Cell className="font-medium whitespace-nowrap">
+                                                {req.type === 'LEAVE' ? (
+                                                    <span>
+                                                        {formatDate(req.leaveStartDate)} → {formatDate(req.leaveEndDate)}
                                                     </span>
-                                                </div>
-                                                {req.actualOtMinutes != null && (
-                                                    <div>
-                                                        <span className="text-gray-600">✅ OT thực tế:</span>
-                                                        <span className="ml-2 font-bold text-green-600">
-                                                            {Math.floor(req.actualOtMinutes / 60)}h {req.actualOtMinutes % 60}m
+                                                ) : (
+                                                    formatDate(req.date)
+                                                )}
+                                            </Table.Cell>
+
+                                            {/* Details (Time or Leave Type + Days or OT Info) */}
+                                            <Table.Cell className={req.type === 'OT_REQUEST' ? 'align-top' : 'whitespace-nowrap align-top'}>
+                                                {req.type === 'LEAVE' ? (
+                                                    <div className="flex flex-col gap-1">
+                                                        <Badge color="blue" size="sm">
+                                                            {getLeaveTypeLabel(req.leaveType)}
+                                                        </Badge>
+                                                        <span className="text-xs text-gray-600">
+                                                            {req.leaveDaysCount ?? 0} ngày làm việc
+                                                        </span>
+                                                    </div>
+                                                ) : req.type === 'OT_REQUEST' ? (
+                                                    <div className="flex flex-col gap-2 text-sm">
+                                                        <div>
+                                                            <span className="text-gray-600">⏰ Dự kiến về:</span>
+                                                            <span className="ml-2 font-medium whitespace-nowrap">
+                                                                {formatOtEndTime(req.estimatedEndTime, req.date)}
+                                                            </span>
+                                                        </div>
+                                                        {req.actualOtMinutes != null && (
+                                                            <div>
+                                                                <span className="text-gray-600">✅ OT thực tế:</span>
+                                                                <span className="ml-2 font-bold text-green-600 whitespace-nowrap">
+                                                                    {Math.floor(req.actualOtMinutes / 60)}h {req.actualOtMinutes % 60}m
+                                                                </span>
+                                                            </div>
+                                                        )}
+
+                                                        {req.status === 'PENDING' && (
+                                                            <div>
+                                                                <Button
+                                                                    size="xs"
+                                                                    color="failure"
+                                                                    onClick={() => handleCancelOt(req._id, req.date)}
+                                                                    disabled={cancelLoading === req._id}
+                                                                >
+                                                                    {cancelLoading === req._id ? '...' : '🗑️ Hủy'}
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-sm">
+                                                            Vào: {formatTime(req.requestedCheckInAt)}
+                                                        </span>
+                                                        <span className="text-sm">
+                                                            Ra: {formatTimeWithDate(req.requestedCheckOutAt, isCrossMidnight(req), req.date, req.checkInDate)}
                                                         </span>
                                                     </div>
                                                 )}
-                                            </div>
-                                        ) : (
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-sm">
-                                                    Vào: {formatTime(req.requestedCheckInAt)}
+                                            </Table.Cell>
+
+                                            {/* Reason */}
+                                            <Table.Cell className="max-w-xs truncate" title={req.reason}>
+                                                {req.reason || '—'}
+                                            </Table.Cell>
+
+                                            {/* Status */}
+                                            <Table.Cell>
+                                                {getStatusBadge(req.status)}
+                                            </Table.Cell>
+
+                                            {/* Created At */}
+                                            <Table.Cell className="text-sm text-gray-500 whitespace-nowrap">
+                                                {formatDateTime(req.createdAt)}
+                                            </Table.Cell>
+
+                                            {/* Reject Reason */}
+                                            <Table.Cell className="max-w-xs truncate" title={rejectReasonDisplay}>
+                                                <span className={req.status === 'REJECTED' ? '' : 'text-xs text-gray-500'}>
+                                                    {rejectReasonDisplay}
                                                 </span>
-                                                <span className="text-sm">
-                                                    Ra: {formatTimeWithDate(req.requestedCheckOutAt, isCrossMidnight(req), req.date, req.checkInDate)}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </Table.Cell>
-
-                                    {/* Reason */}
-                                    <Table.Cell className="max-w-xs truncate" title={req.reason}>
-                                        {req.reason || '—'}
-                                    </Table.Cell>
-
-                                    {/* Status */}
-                                    <Table.Cell>
-                                        {getStatusBadge(req.status)}
-                                    </Table.Cell>
-
-                                    {/* Created At */}
-                                    <Table.Cell className="text-sm text-gray-500 whitespace-nowrap">
-                                        {formatDateTime(req.createdAt)}
-                                    </Table.Cell>
-
-                                    {/* Actions */}
-                                    <Table.Cell>
-                                        {req.status === 'PENDING' && req.type === 'OT_REQUEST' ? (
-                                            <Button
-                                                size="xs"
-                                                color="failure"
-                                                onClick={() => handleCancelOt(req._id, req.date)}
-                                                disabled={cancelLoading === req._id}
-                                            >
-                                                {cancelLoading === req._id ? '...' : '🗑️ Hủy'}
-                                            </Button>
-                                        ) : (
-                                            <span className="text-gray-400 text-xs">—</span>
-                                        )}
-                                    </Table.Cell>
-                                </Table.Row>
-                            ))
-                        )}
-                    </Table.Body>
-                </Table>
+                                            </Table.Cell>
+                                        </Table.Row>
+                                    );
+                                })
+                            )}
+                        </Table.Body>
+                    </Table>
+                </div>
             </div>
 
             {/* Pagination - at bottom */}
