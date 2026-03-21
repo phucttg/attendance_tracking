@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Select, Button, Spinner, Alert, Tooltip } from 'flowbite-react';
+import { Table, Select, Button, Spinner, Alert, Modal } from 'flowbite-react';
 import { HiDownload } from 'react-icons/hi';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -40,6 +40,12 @@ export default function MonthlyReportPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [exporting, setExporting] = useState(false); // Export loading state
+    const [lateDetailsModal, setLateDetailsModal] = useState({
+        open: false,
+        employeeName: '',
+        employeeCode: '',
+        details: [],
+    });
 
     // Derived scope: non-admin always uses 'team' (prevents race condition on role change)
     const effectiveScope = isAdmin ? scope : 'team';
@@ -241,6 +247,28 @@ export default function MonthlyReportPage() {
         return `${day}/${month}`;
     };
 
+    const closeLateDetailsModal = () => {
+        setLateDetailsModal({
+            open: false,
+            employeeName: '',
+            employeeCode: '',
+            details: [],
+        });
+    };
+
+    const openLateDetailsModal = (row) => {
+        const lateCount = row?.totalLateCount || 0;
+        const details = Array.isArray(row?.lateDetails) ? row.lateDetails : [];
+        if (lateCount <= 0 || details.length === 0) return;
+
+        setLateDetailsModal({
+            open: true,
+            employeeName: row?.user?.name || 'N/A',
+            employeeCode: row?.user?.employeeCode || 'N/A',
+            details,
+        });
+    };
+
     const renderLateCell = (row) => {
         const lateCount = row?.totalLateCount || 0;
         const details = Array.isArray(row?.lateDetails) ? row.lateDetails : [];
@@ -250,21 +278,15 @@ export default function MonthlyReportPage() {
             return <span className={className}>{lateCount}</span>;
         }
 
-        const tooltipContent = (
-            <div className="text-xs space-y-1">
-                {details.map((item, idx) => (
-                    <div key={`${item.date}-${item.checkInTime}-${idx}`} className="flex justify-between gap-3">
-                        <span>{formatDateShort(item.date)} {item.checkInTime}</span>
-                        <span>{item.lateMinutes}p</span>
-                    </div>
-                ))}
-            </div>
-        );
-
         return (
-            <Tooltip content={tooltipContent} placement="top">
-                <span className={`cursor-help ${className}`}>{lateCount}</span>
-            </Tooltip>
+            <button
+                type="button"
+                className={`underline decoration-dotted underline-offset-2 ${className}`}
+                onClick={() => openLateDetailsModal(row)}
+                aria-label={`Xem chi tiết đi muộn của ${row?.user?.name || 'nhân viên'}`}
+            >
+                {lateCount}
+            </button>
         );
     };
 
@@ -348,7 +370,7 @@ export default function MonthlyReportPage() {
                 </Alert>
             )}
 
-            <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <div className="bg-white rounded-lg shadow">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <Spinner size="lg" />
@@ -358,102 +380,104 @@ export default function MonthlyReportPage() {
                         Không có dữ liệu báo cáo cho tháng này
                     </div>
                 ) : (
-                    <Table striped>
-                        <Table.Head>
-                            <Table.HeadCell>Mã NV</Table.HeadCell>
-                            <Table.HeadCell>Tên NV</Table.HeadCell>
-                            <Table.HeadCell>Phòng ban</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Ngày công tháng</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Có mặt</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Vắng mặt</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Nghỉ phép</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Phép năm</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Nghỉ ốm</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Không lương</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Giờ làm (h)</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Đi muộn (lần)</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Đi muộn (phút)</Table.HeadCell>
-                            <Table.HeadCell className="text-right">Về sớm (lần)</Table.HeadCell>
-                            <Table.HeadCell className="text-right">OT duyệt (h)</Table.HeadCell>
-                            <Table.HeadCell className="text-right">OT chưa duyệt (h)</Table.HeadCell>
-                        </Table.Head>
-                        <Table.Body className="divide-y">
-                            {summary.map(row => (
-                                <Table.Row key={row.user._id} className="bg-white">
-                                    <Table.Cell className="font-medium text-gray-900">
-                                        {row.user.employeeCode || 'N/A'}
-                                    </Table.Cell>
-                                    <Table.Cell>
-                                        {row.user.name || 'N/A'}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.user.teamName || '-'}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.totalWorkdays || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.presentDays || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.absentDays || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.leaveDays || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.leaveByType?.ANNUAL || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.leaveByType?.SICK || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.leaveByType?.UNPAID || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {formatHours(row.totalWorkMinutes)}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {renderLateCell(row)}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.totalLateMinutes || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        {row.earlyLeaveCount || 0}
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        <span className={row.approvedOtMinutes > 0 ? 'text-blue-600 font-medium' : ''}>
-                                            {formatHours(row.approvedOtMinutes)}
-                                        </span>
-                                    </Table.Cell>
-                                    <Table.Cell className="text-right">
-                                        <span className={row.unapprovedOtMinutes > 0 ? 'text-orange-600 font-medium' : ''}>
-                                            {formatHours(row.unapprovedOtMinutes)}
-                                        </span>
-                                    </Table.Cell>
+                    <div className="max-h-[min(70vh,44rem)] overflow-auto overscroll-contain">
+                        <Table striped>
+                            <Table.Head>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50">Mã NV</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50">Tên NV</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50">Phòng ban</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Ngày công tháng</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Có mặt</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Vắng mặt</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Nghỉ phép</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Phép năm</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Nghỉ ốm</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Không lương</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Giờ làm (h)</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Đi muộn (lần)</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Đi muộn (phút)</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Về sớm (lần)</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">OT duyệt (h)</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">OT chưa duyệt (h)</Table.HeadCell>
+                            </Table.Head>
+                            <Table.Body className="divide-y">
+                                {summary.map(row => (
+                                    <Table.Row key={row.user._id} className="bg-white">
+                                        <Table.Cell className="font-medium text-gray-900">
+                                            {row.user.employeeCode || 'N/A'}
+                                        </Table.Cell>
+                                        <Table.Cell>
+                                            {row.user.name || 'N/A'}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.user.teamName || '-'}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.totalWorkdays || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.presentDays || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.absentDays || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.leaveDays || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.leaveByType?.ANNUAL || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.leaveByType?.SICK || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.leaveByType?.UNPAID || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {formatHours(row.totalWorkMinutes)}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {renderLateCell(row)}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.totalLateMinutes || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.earlyLeaveCount || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            <span className={row.approvedOtMinutes > 0 ? 'text-blue-600 font-medium' : ''}>
+                                                {formatHours(row.approvedOtMinutes)}
+                                            </span>
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            <span className={row.unapprovedOtMinutes > 0 ? 'text-orange-600 font-medium' : ''}>
+                                                {formatHours(row.unapprovedOtMinutes)}
+                                            </span>
+                                        </Table.Cell>
+                                    </Table.Row>
+                                ))}
+                                <Table.Row className="bg-gray-100 font-semibold">
+                                    <Table.Cell>TỔNG</Table.Cell>
+                                    <Table.Cell>-</Table.Cell>
+                                    <Table.Cell className="text-right">-</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.totalWorkdays}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.presentDays}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.absentDays}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.leaveDays}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.annualLeave}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.sickLeave}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.unpaidLeave}</Table.Cell>
+                                    <Table.Cell className="text-right">{formatHours(totals.totalWorkMinutes)}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.totalLateCount}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.totalLateMinutes}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.earlyLeaveCount}</Table.Cell>
+                                    <Table.Cell className="text-right">{formatHours(totals.approvedOtMinutes)}</Table.Cell>
+                                    <Table.Cell className="text-right">{formatHours(totals.unapprovedOtMinutes)}</Table.Cell>
                                 </Table.Row>
-                            ))}
-                            <Table.Row className="bg-gray-100 font-semibold">
-                                <Table.Cell>TỔNG</Table.Cell>
-                                <Table.Cell>-</Table.Cell>
-                                <Table.Cell className="text-right">-</Table.Cell>
-                                <Table.Cell className="text-right">{totals.totalWorkdays}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.presentDays}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.absentDays}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.leaveDays}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.annualLeave}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.sickLeave}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.unpaidLeave}</Table.Cell>
-                                <Table.Cell className="text-right">{formatHours(totals.totalWorkMinutes)}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.totalLateCount}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.totalLateMinutes}</Table.Cell>
-                                <Table.Cell className="text-right">{totals.earlyLeaveCount}</Table.Cell>
-                                <Table.Cell className="text-right">{formatHours(totals.approvedOtMinutes)}</Table.Cell>
-                                <Table.Cell className="text-right">{formatHours(totals.unapprovedOtMinutes)}</Table.Cell>
-                            </Table.Row>
-                        </Table.Body>
-                    </Table>
+                            </Table.Body>
+                        </Table>
+                    </div>
                 )}
             </div>
 
@@ -463,6 +487,41 @@ export default function MonthlyReportPage() {
                     Tổng: {summary.length} nhân viên
                 </div>
             )}
+
+            <Modal show={lateDetailsModal.open} onClose={closeLateDetailsModal} size="md">
+                <Modal.Header>Chi tiết đi muộn</Modal.Header>
+                <Modal.Body>
+                    <div className="space-y-3">
+                        <div className="text-sm text-gray-600">
+                            <span className="font-medium">{lateDetailsModal.employeeName}</span>
+                            {lateDetailsModal.employeeCode && (
+                                <span className="ml-2">({lateDetailsModal.employeeCode})</span>
+                            )}
+                        </div>
+
+                        {lateDetailsModal.details.length === 0 ? (
+                            <div className="text-sm text-gray-500">Không có dữ liệu chi tiết.</div>
+                        ) : (
+                            <div className="space-y-2">
+                                {lateDetailsModal.details.map((item, idx) => (
+                                    <div
+                                        key={`${item.date}-${item.checkInTime}-${idx}`}
+                                        className="flex items-center justify-between rounded border border-gray-100 px-3 py-2 text-sm"
+                                    >
+                                        <span>{formatDateShort(item.date)} {item.checkInTime}</span>
+                                        <span className="font-medium text-red-600">{item.lateMinutes}p</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button color="gray" onClick={closeLateDetailsModal}>
+                        Đóng
+                    </Button>
+                </Modal.Footer>
+            </Modal>
         </div>
     );
 }
