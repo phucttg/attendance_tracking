@@ -36,6 +36,7 @@ router.post('/users/:id/restore', authenticate, userController.restoreUser);
 router.post('/holidays', authenticate, holidayController.createHoliday);
 router.get('/holidays', authenticate, holidayController.getHolidays);
 router.post('/holidays/range', authenticate, holidayController.createHolidayRange);
+router.delete('/holidays/:id', authenticate, holidayController.deleteHoliday);
 
 // Attendance Management (ADMIN only)
 // Force checkout for stale open sessions
