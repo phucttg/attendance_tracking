@@ -7,9 +7,13 @@
  * 
  * Environment Variables:
  * - MONGODB_REPLICA_SET: Explicit flag ('true'/'false') to enable/disable transactions
- * - MONGODB_URI: Connection string (parsed to detect replicaSet parameter)
- * - NODE_ENV: Production assumes replica set availability
+ * - MONGO_URI: Canonical connection string
+ * - MONGODB_URI: Legacy fallback connection string
  */
+
+export const getMongoConnectionUri = () => {
+  return process.env.MONGO_URI || process.env.MONGODB_URI || '';
+};
 
 /**
  * Check if MongoDB replica set is available for transactions
@@ -20,8 +24,7 @@
  * Detection Methods (in order of priority):
  * 1. Explicit MONGODB_REPLICA_SET environment variable
  * 2. Parse connection string for replicaSet parameter
- * 3. Assume replica set in production environment
- * 4. Default to standalone (no transactions)
+ * 3. Default to standalone (no transactions)
  * 
  * @returns {boolean} True if transactions are available, false otherwise
  */
@@ -36,7 +39,7 @@ export const isReplicaSetAvailable = () => {
   }
 
   // Method 2: Parse connection string for replicaSet parameter
-  const uri = process.env.MONGODB_URI || '';
+  const uri = getMongoConnectionUri();
   
   // Atlas (mongodb+srv) almost always has replica set
   if (uri.startsWith('mongodb+srv://')) {
@@ -50,19 +53,31 @@ export const isReplicaSetAvailable = () => {
     return true;
   }
 
-  // Method 3: Production warning (no auto-assume for safety)
-  // If running in production without explicit config, warn but default to safe mode
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') {
     console.warn(
-      '⚠️  PRODUCTION WARNING: MONGODB_REPLICA_SET environment variable not explicitly set!\n' +
-      '   Defaulting to standalone mode (transactions disabled).\n' +
-      '   If your MongoDB is a replica set or Atlas cluster, set MONGODB_REPLICA_SET=true\n' +
-      '   to enable atomic transactions for approve/reject operations.'
+      '⚠️  HOLIDAY MUTATION WARNING: MONGODB_REPLICA_SET is not explicitly set.\n' +
+      '   Transaction detection is falling back to URI inspection only.'
     );
   }
 
-  // Method 4: Default to standalone for safety (development/testing)
   return false;
+};
+
+export const requiresHolidayMutationTransactions = () => {
+  return process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+};
+
+export const assertHolidayMutationEnvironment = () => {
+  if (!requiresHolidayMutationTransactions()) {
+    return;
+  }
+
+  if (!isReplicaSetAvailable()) {
+    throw new Error(
+      'Holiday mutations require MongoDB transaction support in production/staging. ' +
+      'Set MONGODB_REPLICA_SET=true or use a replica set / mongos connection.'
+    );
+  }
 };
 
 /**
