@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Table, Button, Modal, Spinner, Alert, Select, Label, TextInput, Toast
 } from 'flowbite-react';
-import { HiPlus, HiCheck, HiX, HiCalendar } from 'react-icons/hi';
-import { getHolidays, createHoliday, createHolidayRange } from '../api/adminApi';
+import { HiPlus, HiCheck, HiX, HiCalendar, HiTrash, HiLockClosed } from 'react-icons/hi';
+import { getHolidays, createHoliday, createHolidayRange, deleteHoliday } from '../api/adminApi';
 import { PageHeader } from '../components/ui';
 
 /**
@@ -40,6 +40,8 @@ export default function AdminHolidaysPage() {
     const [rangeFormData, setRangeFormData] = useState({ startDate: '', endDate: '', name: '' });
     const [formLoading, setFormLoading] = useState(false);
     const [formError, setFormError] = useState('');
+    const [actionLoading, setActionLoading] = useState(null);
+    const [skippedResults, setSkippedResults] = useState([]);
 
     // Toast state
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
@@ -111,6 +113,7 @@ export default function AdminHolidaysPage() {
                 date: formData.date,
                 name: formData.name.trim()
             });
+            setSkippedResults([]);
             setCreateModal(false);
             showToast('Tạo ngày nghỉ thành công!', 'success');
             fetchHolidays(); // Refresh list
@@ -154,6 +157,7 @@ export default function AdminHolidaysPage() {
                 endDate: rangeFormData.endDate,
                 name: rangeFormData.name.trim()
             });
+            setSkippedResults(res.data.skippedDates || []);
             setCreateModal(false);
             showToast(
                 `Đã tạo ${res.data.created} ngày nghỉ` +
@@ -162,9 +166,29 @@ export default function AdminHolidaysPage() {
             );
             fetchHolidays(); // Refresh list
         } catch (err) {
-            setFormError(err.response?.data?.message || 'Tạo ngày nghỉ thất bại');
+            setFormError(err.response?.data?.message || 'Tạo khoảng ngày nghỉ thất bại. Không có thay đổi nào được lưu.');
         } finally {
             setFormLoading(false);
+        }
+    };
+
+    const handleDeleteHoliday = async (holiday) => {
+        if (actionLoading) return;
+
+        const confirmText = `Xóa ngày nghỉ "${holiday.name}" (${formatDate(holiday.date)})? `
+            + 'Đây là xóa thật và có thể làm thay đổi attendance, leave count và report lịch sử.';
+        if (!window.confirm(confirmText)) return;
+
+        setActionLoading(holiday._id);
+        try {
+            await deleteHoliday(holiday._id);
+            setSkippedResults([]);
+            showToast(`Đã xóa ngày nghỉ ${formatDate(holiday.date)}`, 'success');
+            fetchHolidays();
+        } catch (err) {
+            showToast(err.response?.data?.message || 'Xóa ngày nghỉ thất bại', 'failure');
+        } finally {
+            setActionLoading(null);
         }
     };
 
@@ -222,6 +246,12 @@ export default function AdminHolidaysPage() {
                 </Alert>
             )}
 
+            {skippedResults.length > 0 && (
+                <Alert color="warning" className="mb-4" onDismiss={() => setSkippedResults([])}>
+                    {`Các ngày bị bỏ qua: ${skippedResults.map((item) => formatDate(item.date)).join(', ')}`}
+                </Alert>
+            )}
+
             {/* Loading */}
             {loading && (
                 <div className="flex justify-center py-10">
@@ -243,6 +273,7 @@ export default function AdminHolidaysPage() {
                         <Table.Head>
                             <Table.HeadCell>Ngày</Table.HeadCell>
                             <Table.HeadCell>Tên</Table.HeadCell>
+                            <Table.HeadCell>Thao tác</Table.HeadCell>
                         </Table.Head>
                         <Table.Body className="divide-y">
                             {holidays.map((holiday) => (
@@ -251,6 +282,31 @@ export default function AdminHolidaysPage() {
                                         {formatDate(holiday.date)}
                                     </Table.Cell>
                                     <Table.Cell>{holiday.name}</Table.Cell>
+                                    <Table.Cell>
+                                        {holiday.isLocked ? (
+                                            <Button
+                                                color="gray"
+                                                size="xs"
+                                                disabled
+                                                title="Ngày nghỉ đã qua nên không thể xóa"
+                                            >
+                                                <HiLockClosed className="mr-2 h-4 w-4" />
+                                                Đã khóa
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                color="failure"
+                                                size="xs"
+                                                onClick={() => handleDeleteHoliday(holiday)}
+                                                disabled={Boolean(actionLoading)}
+                                            >
+                                                {actionLoading === holiday._id
+                                                    ? <Spinner size="sm" className="mr-2" />
+                                                    : <HiTrash className="mr-2 h-4 w-4" />}
+                                                Xóa
+                                            </Button>
+                                        )}
+                                    </Table.Cell>
                                 </Table.Row>
                             ))}
                         </Table.Body>

@@ -43,10 +43,19 @@ export const createHoliday = (data) =>
  * @param {string} data.startDate - Start date YYYY-MM-DD
  * @param {string} data.endDate - End date YYYY-MM-DD
  * @param {string} data.name - Holiday name for all dates
- * @returns {Promise} { created: number, skipped: number, dates: string[] }
+ * @returns {Promise} { created, skipped, dates, createdDates, skippedDates }
  */
 export const createHolidayRange = (data) =>
     client.post('/admin/holidays/range', data);
+
+/**
+ * Delete a single holiday by id.
+ * Roles: ADMIN only
+ * @param {string} holidayId - Holiday ObjectId
+ * @returns {Promise} { deleted: { _id, date, name } }
+ */
+export const deleteHoliday = (holidayId) =>
+    client.delete(`/admin/holidays/${holidayId}`);
 
 
 // ============================================
