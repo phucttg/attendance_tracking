@@ -1,6 +1,6 @@
 import { Table, Button, Pagination } from 'flowbite-react';
 import { HiEye, HiPencil, HiKey } from 'react-icons/hi';
-import { StatusBadge } from '../ui';
+import { ScheduleBadge, StatusBadge } from '../ui';
 import { formatTime } from '../../utils/dateTimeFormat';
 
 /**
@@ -54,6 +54,7 @@ export default function TodayActivityTable({
                     <Table.HeadCell>Name</Table.HeadCell>
                     <Table.HeadCell>Email</Table.HeadCell>
                     <Table.HeadCell>Status</Table.HeadCell>
+                    <Table.HeadCell>Ca</Table.HeadCell>
                     <Table.HeadCell>Check In</Table.HeadCell>
                     <Table.HeadCell>Check Out</Table.HeadCell>
                     <Table.HeadCell>Actions</Table.HeadCell>
@@ -61,11 +62,11 @@ export default function TodayActivityTable({
                 <Table.Body className="divide-y">
                     {/* P2 FIX: Empty state */}
                     {isEmpty ? (
-                        <Table.Row>
-                            <Table.Cell colSpan={7} className="text-center py-8 text-gray-500">
-                                No activity found for today.
-                            </Table.Cell>
-                        </Table.Row>
+                            <Table.Row>
+                                <Table.Cell colSpan={8} className="text-center py-8 text-gray-500">
+                                    No activity found for today.
+                                </Table.Cell>
+                            </Table.Row>
                     ) : (
                         validMembers.map((item) => {
                             const user = item.user;
@@ -83,6 +84,9 @@ export default function TodayActivityTable({
                                     </Table.Cell>
                                     <Table.Cell>
                                         <StatusBadge status={item.computed?.status} />
+                                    </Table.Cell>
+                                    <Table.Cell>
+                                        <ScheduleBadge scheduleType={item.scheduleType} />
                                     </Table.Cell>
                                     {/* P3 FIX: whitespace-nowrap for times */}
                                     <Table.Cell className="whitespace-nowrap">

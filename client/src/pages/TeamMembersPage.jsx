@@ -6,7 +6,7 @@ import {
 import { HiRefresh, HiEye } from 'react-icons/hi';
 import { getTodayAttendance, getTeams } from '../api/memberApi';
 import { useAuth } from '../context/AuthContext';
-import { PageHeader, StatusBadge } from '../components/ui';
+import { PageHeader, ScheduleBadge, StatusBadge } from '../components/ui';
 
 /**
  * TeamMembersPage: Manager views list of same-team members with today's activity.
@@ -169,6 +169,7 @@ export default function TeamMembersPage() {
                             <Table.HeadCell>Name</Table.HeadCell>
                             <Table.HeadCell>Email</Table.HeadCell>
                             <Table.HeadCell>Status</Table.HeadCell>
+                            <Table.HeadCell>Ca</Table.HeadCell>
                             <Table.HeadCell>Check In</Table.HeadCell>
                             <Table.HeadCell>Check Out</Table.HeadCell>
                             <Table.HeadCell>Actions</Table.HeadCell>
@@ -185,6 +186,9 @@ export default function TeamMembersPage() {
                                     </Table.Cell>
                                     <Table.Cell>
                                         <StatusBadge status={item.computed?.status} />
+                                    </Table.Cell>
+                                    <Table.Cell>
+                                        <ScheduleBadge scheduleType={item.scheduleType} />
                                     </Table.Cell>
                                     <Table.Cell>
                                         {formatTime(item.attendance?.checkInAt)}

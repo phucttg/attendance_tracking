@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Badge, Spinner, Alert } from 'flowbite-react';
 import { HiClock, HiCheckCircle, HiXCircle } from 'react-icons/hi';
+import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
+import { ScheduleBadge } from '../components/ui';
+import { formatDurationByMode } from '../utils/dateTimeFormat';
 
 const ATTENDANCE_SOURCE = {
     TODAY: 'TODAY',
@@ -22,8 +25,15 @@ const isAbortError = (err) =>
  * - Display check-in/out times when available
  */
 export default function DashboardPage() {
+    const navigate = useNavigate();
     const [effectiveAttendance, setEffectiveAttendance] = useState(null);
     const [attendanceSource, setAttendanceSource] = useState(null);
+    const [requiresScheduleSelection, setRequiresScheduleSelection] = useState(false);
+    const [durationModes, setDurationModes] = useState({
+        late: 'minutes',
+        work: 'minutes',
+        ot: 'minutes',
+    });
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState('');
@@ -58,10 +68,24 @@ export default function DashboardPage() {
 
             let nextEffectiveAttendance = todayRecord || null;
             let nextAttendanceSource = todayRecord ? ATTENDANCE_SOURCE.TODAY : null;
+            let nextRequiresScheduleSelection = false;
 
             const hasTodayCheckIn = Boolean(todayRecord?.checkInAt);
             const hasTodayCheckOut = Boolean(todayRecord?.checkOutAt);
             const shouldCheckOpenSession = Boolean(todayRecord) && !hasTodayCheckIn && !hasTodayCheckOut;
+
+            if (shouldCheckOpenSession) {
+                try {
+                    const config = signal ? { signal } : undefined;
+                    const scheduleRes = await client.get('/work-schedules/me', config);
+                    const scheduleItems = Array.isArray(scheduleRes.data?.items) ? scheduleRes.data.items : [];
+                    const todaySchedule = scheduleItems.find((item) => item?.workDate === today) || null;
+                    nextRequiresScheduleSelection = Boolean(todaySchedule?.isWorkday && !todaySchedule?.scheduleType);
+                } catch (scheduleErr) {
+                    if (isAbortError(scheduleErr)) return;
+                    // Soft-fail: fallback to existing behavior when schedule API is unavailable.
+                }
+            }
 
             if (shouldCheckOpenSession) {
                 const config = signal ? { signal } : undefined;
@@ -105,6 +129,7 @@ export default function DashboardPage() {
 
             setEffectiveAttendance(nextEffectiveAttendance);
             setAttendanceSource(nextAttendanceSource);
+            setRequiresScheduleSelection(nextRequiresScheduleSelection);
         } catch (err) {
             // Ignore abort errors
             if (isAbortError(err)) return;
@@ -132,6 +157,11 @@ export default function DashboardPage() {
             // Refetch without showing spinner (smooth UX)
             await fetchDashboardAttendance(undefined, false);
         } catch (err) {
+            const code = err.response?.data?.code;
+            if (code === 'SCHEDULE_REQUIRED') {
+                navigate(err.response?.data?.redirectTo || '/my-schedule');
+                return;
+            }
             setError(err.response?.data?.message || 'Check-in failed');
         } finally {
             setActionLoading(false);
@@ -157,9 +187,22 @@ export default function DashboardPage() {
         }
     };
 
+    const toggleDurationMode = (metric) => {
+        setDurationModes((prev) => ({
+            ...prev,
+            [metric]: prev[metric] === 'minutes' ? 'hours' : 'minutes',
+        }));
+    };
+
     // Determine display state
     const hasCheckedIn = Boolean(effectiveAttendance?.checkInAt);
     const hasCheckedOut = Boolean(effectiveAttendance?.checkOutAt);
+    const isUnregisteredToday = effectiveAttendance?.status === 'UNREGISTERED';
+    const shouldPromptScheduleRegistration = !hasCheckedIn && (isUnregisteredToday || requiresScheduleSelection);
+    const isFlexible = effectiveAttendance?.scheduleType === 'FLEXIBLE';
+    const lateMinutes = Number.isFinite(effectiveAttendance?.lateMinutes) ? effectiveAttendance.lateMinutes : 0;
+    const workMinutes = Number.isFinite(effectiveAttendance?.workMinutes) ? effectiveAttendance.workMinutes : 0;
+    const otMinutes = Number.isFinite(effectiveAttendance?.otMinutes) ? effectiveAttendance.otMinutes : 0;
 
     // Format time for display (GMT+7)
     const formatTime = (isoString) => {
@@ -220,7 +263,11 @@ export default function DashboardPage() {
                     <div className="text-center space-y-6">
                         {/* Status Badge */}
                         <div>
-                            {!hasCheckedIn ? (
+                            {shouldPromptScheduleRegistration ? (
+                                <Badge color="warning" size="lg" icon={HiXCircle}>
+                                    Chưa đăng ký ca
+                                </Badge>
+                            ) : !hasCheckedIn ? (
                                 <Badge color="gray" size="lg" icon={HiXCircle}>
                                     Chưa check-in
                                 </Badge>
@@ -233,6 +280,10 @@ export default function DashboardPage() {
                                     Đã check-out
                                 </Badge>
                             )}
+                        </div>
+
+                        <div className="flex justify-center">
+                            <ScheduleBadge scheduleType={effectiveAttendance?.scheduleType} />
                         </div>
 
                         {/* Check-in/out Times */}
@@ -263,19 +314,54 @@ export default function DashboardPage() {
                                 <div className="bg-yellow-50 rounded p-2">
                                     <p className="text-yellow-600">Đi muộn</p>
                                     <p className="font-semibold">
-                                        {effectiveAttendance?.lateMinutes || 0} phút
+                                        {isFlexible ? (
+                                            '-'
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="cursor-pointer hover:underline underline-offset-2"
+                                                title="Bấm để đổi đơn vị"
+                                                aria-label="Đổi đơn vị đi muộn"
+                                                aria-pressed={durationModes.late === 'hours'}
+                                                onClick={() => toggleDurationMode('late')}
+                                            >
+                                                {formatDurationByMode(lateMinutes, durationModes.late)}
+                                            </button>
+                                        )}
                                     </p>
                                 </div>
                                 <div className="bg-blue-50 rounded p-2">
                                     <p className="text-blue-600">Làm việc</p>
                                     <p className="font-semibold">
-                                        {effectiveAttendance?.workMinutes || 0} phút
+                                        <button
+                                            type="button"
+                                            className="cursor-pointer hover:underline underline-offset-2"
+                                            title="Bấm để đổi đơn vị"
+                                            aria-label="Đổi đơn vị làm việc"
+                                            aria-pressed={durationModes.work === 'hours'}
+                                            onClick={() => toggleDurationMode('work')}
+                                        >
+                                            {formatDurationByMode(workMinutes, durationModes.work)}
+                                        </button>
                                     </p>
                                 </div>
                                 <div className="bg-green-50 rounded p-2">
                                     <p className="text-green-600">OT</p>
                                     <p className="font-semibold">
-                                        {effectiveAttendance?.otMinutes || 0} phút
+                                        {isFlexible ? (
+                                            '-'
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="cursor-pointer hover:underline underline-offset-2"
+                                                title="Bấm để đổi đơn vị"
+                                                aria-label="Đổi đơn vị OT"
+                                                aria-pressed={durationModes.ot === 'hours'}
+                                                onClick={() => toggleDurationMode('ot')}
+                                            >
+                                                {formatDurationByMode(otMinutes, durationModes.ot)}
+                                            </button>
+                                        )}
                                     </p>
                                 </div>
                             </div>
@@ -283,7 +369,11 @@ export default function DashboardPage() {
 
                         {/* Action Buttons */}
                         <div className="flex gap-4 justify-center">
-                            {!hasCheckedIn && (
+                            {shouldPromptScheduleRegistration ? (
+                                <Button as={Link} to="/my-schedule" color="warning">
+                                    Đăng ký ca ngay
+                                </Button>
+                            ) : !hasCheckedIn && (
                                 <Button
                                     color="blue"
                                     size="lg"

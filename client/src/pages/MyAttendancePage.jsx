@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Table, Select, Spinner, Alert, Badge } from 'flowbite-react';
 import client from '../api/client';
 import { getMyRequests } from '../api/requestApi';
-import { PageHeader, StatusBadge } from '../components/ui';
+import { PageHeader, ScheduleBadge, StatusBadge } from '../components/ui';
+import { formatDurationByMode } from '../utils/dateTimeFormat';
 
 /**
  * MyAttendancePage: Monthly attendance history table with status badges.
@@ -16,6 +17,7 @@ export default function MyAttendancePage() {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [durationModeByCell, setDurationModeByCell] = useState({});
     // Map of YYYY-MM-DD -> OT request object (most recent per date)
     const [otRequestsByDate, setOtRequestsByDate] = useState({});
 
@@ -147,8 +149,15 @@ export default function MyAttendancePage() {
     const getOtBadgeProps = (status) =>
         OT_STATUS_MAP[status] ?? { color: 'gray', label: status ?? '' };
 
-
-
+    const getCellKey = (date, metric) => `${date}:${metric}`;
+    const getCellMode = (date, metric) => durationModeByCell[getCellKey(date, metric)] || 'minutes';
+    const toggleCellMode = (date, metric) => {
+        const key = getCellKey(date, metric);
+        setDurationModeByCell((prev) => ({
+            ...prev,
+            [key]: prev[key] === 'hours' ? 'minutes' : 'hours',
+        }));
+    };
     return (
         <div>
             <PageHeader title="Lịch sử chấm công">
@@ -190,6 +199,7 @@ export default function MyAttendancePage() {
                             <Table.HeadCell>Check-in</Table.HeadCell>
                             <Table.HeadCell>Check-out</Table.HeadCell>
                             <Table.HeadCell>Trạng thái</Table.HeadCell>
+                            <Table.HeadCell>Ca</Table.HeadCell>
                             <Table.HeadCell>Đi muộn</Table.HeadCell>
                             <Table.HeadCell>Làm việc</Table.HeadCell>
                             <Table.HeadCell>OT</Table.HeadCell>
@@ -206,17 +216,38 @@ export default function MyAttendancePage() {
                                         <StatusBadge status={item.status} itemDate={item.date} today={today} />
                                     </Table.Cell>
                                     <Table.Cell>
-                                        {item.lateMinutes > 0 ? (
-                                            <span className="text-yellow-600">
-                                                {item.lateMinutes} phút
-                                            </span>
+                                        <ScheduleBadge scheduleType={item.scheduleType} />
+                                    </Table.Cell>
+                                    <Table.Cell>
+                                        {item.scheduleType === 'FLEXIBLE' ? (
+                                            <span className="text-gray-400">-</span>
+                                        ) : item.lateMinutes > 0 ? (
+                                            <button
+                                                type="button"
+                                                className="text-yellow-600 cursor-pointer hover:underline underline-offset-2"
+                                                title="Bấm để đổi đơn vị"
+                                                aria-label={`Đổi đơn vị đi muộn ngày ${item.date}`}
+                                                aria-pressed={getCellMode(item.date, 'late') === 'hours'}
+                                                onClick={() => toggleCellMode(item.date, 'late')}
+                                            >
+                                                {formatDurationByMode(item.lateMinutes, getCellMode(item.date, 'late'))}
+                                            </button>
                                         ) : (
                                             <span className="text-gray-400">-</span>
                                         )}
                                     </Table.Cell>
                                     <Table.Cell>
                                         {item.workMinutes > 0 ? (
-                                            <span>{item.workMinutes} phút</span>
+                                            <button
+                                                type="button"
+                                                className="cursor-pointer hover:underline underline-offset-2"
+                                                title="Bấm để đổi đơn vị"
+                                                aria-label={`Đổi đơn vị làm việc ngày ${item.date}`}
+                                                aria-pressed={getCellMode(item.date, 'work') === 'hours'}
+                                                onClick={() => toggleCellMode(item.date, 'work')}
+                                            >
+                                                {formatDurationByMode(item.workMinutes, getCellMode(item.date, 'work'))}
+                                            </button>
                                         ) : (
                                             <span className="text-gray-400">-</span>
                                         )}
@@ -234,9 +265,16 @@ export default function MyAttendancePage() {
                                             return (
                                                 <span className="flex flex-wrap items-center gap-1">
                                                     {hasMinutes && (
-                                                        <span className="text-green-600">
-                                                            {item.otMinutes} phút
-                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            className="text-green-600 cursor-pointer hover:underline underline-offset-2"
+                                                            title="Bấm để đổi đơn vị"
+                                                            aria-label={`Đổi đơn vị OT ngày ${item.date}`}
+                                                            aria-pressed={getCellMode(item.date, 'ot') === 'hours'}
+                                                            onClick={() => toggleCellMode(item.date, 'ot')}
+                                                        >
+                                                            {formatDurationByMode(item.otMinutes, getCellMode(item.date, 'ot'))}
+                                                        </button>
                                                     )}
                                                     {otReq && (
                                                         <Badge color={color} data-testid="ot-request-badge">

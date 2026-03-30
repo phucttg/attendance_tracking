@@ -114,6 +114,7 @@ export default function MonthlyReportPage() {
     const totals = useMemo(() => summary.reduce((acc, row) => {
         acc.totalWorkdays += row?.totalWorkdays ?? 0;
         acc.presentDays += row?.presentDays ?? 0;
+        acc.unregisteredDays += row?.unregisteredDays ?? 0;
         acc.absentDays += row?.absentDays ?? 0;
         acc.leaveDays += row?.leaveDays ?? 0;
         acc.annualLeave += row?.leaveByType?.ANNUAL ?? 0;
@@ -129,6 +130,7 @@ export default function MonthlyReportPage() {
     }, {
         totalWorkdays: 0,
         presentDays: 0,
+        unregisteredDays: 0,
         absentDays: 0,
         leaveDays: 0,
         annualLeave: 0,
@@ -388,6 +390,7 @@ export default function MonthlyReportPage() {
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50">Phòng ban</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Ngày công tháng</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Có mặt</Table.HeadCell>
+                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Chưa đăng ký ca</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Vắng mặt</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Nghỉ phép</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Phép năm</Table.HeadCell>
@@ -417,6 +420,9 @@ export default function MonthlyReportPage() {
                                         </Table.Cell>
                                         <Table.Cell className="text-right">
                                             {row.presentDays || 0}
+                                        </Table.Cell>
+                                        <Table.Cell className="text-right">
+                                            {row.unregisteredDays || 0}
                                         </Table.Cell>
                                         <Table.Cell className="text-right">
                                             {row.absentDays || 0}
@@ -463,6 +469,7 @@ export default function MonthlyReportPage() {
                                     <Table.Cell className="text-right">-</Table.Cell>
                                     <Table.Cell className="text-right">{totals.totalWorkdays}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.presentDays}</Table.Cell>
+                                    <Table.Cell className="text-right">{totals.unregisteredDays}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.absentDays}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.leaveDays}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.annualLeave}</Table.Cell>

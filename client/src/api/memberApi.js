@@ -114,3 +114,27 @@ export const updateUser = (id, data) =>
  */
 export const resetPassword = (id, newPassword) =>
     client.post(`/admin/users/${id}/reset-password`, { newPassword });
+
+// ============================================
+// WORK SCHEDULES
+// ============================================
+
+/**
+ * Get my normalized 7-day work schedule window.
+ * start/days are accepted by server but normalized to today+6.
+ */
+export const getMyWorkSchedules = (params = {}, config = {}) =>
+    client.get('/work-schedules/me', { ...config, params });
+
+/**
+ * Full-replace update for my 7-day window.
+ * Body: { items: [{ workDate, scheduleType|null }] }
+ */
+export const putMyWorkSchedules = (items, config = {}) =>
+    client.put('/work-schedules/me', { items }, config);
+
+/**
+ * Manager/Admin read-only schedule window for a user.
+ */
+export const getUserWorkSchedules = (id, params = {}, config = {}) =>
+    client.get(`/work-schedules/users/${id}`, { ...config, params });

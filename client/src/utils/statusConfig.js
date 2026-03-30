@@ -20,6 +20,7 @@ export const STATUS_COLORS = {
     'LATE': 'warning',
     'WORKING': 'info',
     'MISSING_CHECKOUT': 'warning',
+    'UNREGISTERED': 'warning',
     'WEEKEND_OR_HOLIDAY': 'gray',
     'ABSENT': 'failure',
     null: 'gray'
@@ -31,6 +32,7 @@ export const STATUS_LABELS = {
     'LATE': 'Late',
     'WORKING': 'Working',
     'MISSING_CHECKOUT': 'Missing Checkout',
+    'UNREGISTERED': 'Unregistered',
     'WEEKEND_OR_HOLIDAY': 'Weekend/Holiday',
     'ABSENT': 'Absent',
     null: '-'

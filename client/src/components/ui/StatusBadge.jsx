@@ -26,6 +26,7 @@ const STATUS_CONFIG = {
     WORKING: { color: 'info', label: 'Đang làm việc' },
     MISSING_CHECKOUT: { color: 'warning', label: 'Thiếu checkout' },
     MISSING_CHECKIN: { color: 'failure', label: 'Thiếu checkin' }, // Edge case
+    UNREGISTERED: { color: 'warning', label: 'Chưa đăng ký ca' },
     ABSENT: { color: 'failure', label: 'Vắng mặt' },
     WEEKEND_OR_HOLIDAY: { color: 'gray', label: 'Nghỉ' },
     EARLY_LEAVE: { color: 'warning', label: 'Về sớm' },
@@ -34,16 +35,17 @@ const STATUS_CONFIG = {
 export default function StatusBadge({ status, itemDate, today }) {
     // Handle null/undefined status based on date context (per RULES.md 3.2)
     if (!status) {
-        // Future date
-        if (itemDate && today && itemDate > today) {
-            return <Badge color="gray">Chưa tới</Badge>;
+        if (itemDate && today) {
+            if (itemDate > today) {
+                return <Badge color="gray">Chưa tới</Badge>;
+            }
+            if (itemDate === today) {
+                return <Badge color="gray">Chưa check-in</Badge>;
+            }
+            return <Badge color="failure">Vắng mặt</Badge>;
         }
-        // Today - not checked in yet (NOT ABSENT per RULES.md 3.2)
-        if (itemDate && today && itemDate === today) {
-            return <Badge color="gray">Chưa check-in</Badge>;
-        }
-        // Past date with no status → likely absent or no record
-        return <Badge color="failure">Vắng mặt</Badge>;
+        // Default null context (today views) -> not checked in yet
+        return <Badge color="gray">Chưa check-in</Badge>;
     }
 
     const config = STATUS_CONFIG[status] || { color: 'gray', label: status };

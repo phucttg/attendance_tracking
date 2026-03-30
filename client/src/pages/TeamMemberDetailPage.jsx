@@ -5,8 +5,9 @@ import {
 } from 'flowbite-react';
 import { HiArrowLeft } from 'react-icons/hi';
 import {
-    getTeams, getUserById, getUserAttendance
+    getTeams, getUserAttendance, getUserById, getUserWorkSchedules
 } from '../api/memberApi';
+import { ScheduleBadge } from '../components/ui';
 
 /**
  * TeamMemberDetailPage: Manager views same-team member profile + monthly attendance.
@@ -43,6 +44,8 @@ export default function TeamMemberDetailPage() {
     const [loading, setLoading] = useState(true);
     const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [attendanceError, setAttendanceError] = useState('');
+    const [scheduleWindow, setScheduleWindow] = useState([]);
+    const [scheduleError, setScheduleError] = useState('');
     const [error, setError] = useState('');
 
     // Race condition protection
@@ -55,6 +58,7 @@ export default function TeamMemberDetailPage() {
         'WORKING': 'info',         // blue
         'MISSING_CHECKOUT': 'warning', // yellow per RULES.md
         'WEEKEND_OR_HOLIDAY': 'gray',  // grey per RULES.md
+        'UNREGISTERED': 'warning',
         'ABSENT': 'failure',           // red
         null: 'gray'                   // neutral
     };
@@ -65,6 +69,7 @@ export default function TeamMemberDetailPage() {
         'WORKING': 'Working',
         'MISSING_CHECKOUT': 'Missing Checkout',
         'WEEKEND_OR_HOLIDAY': 'Weekend/Holiday',
+        'UNREGISTERED': 'Unregistered',
         'ABSENT': 'Absent',
         null: '-'
     };
@@ -154,6 +159,25 @@ export default function TeamMemberDetailPage() {
     useEffect(() => {
         fetchAttendance();
     }, [fetchAttendance]);
+
+    useEffect(() => {
+        const fetchScheduleWindow = async () => {
+            if (!id) return;
+            setScheduleError('');
+            try {
+                const res = await getUserWorkSchedules(id);
+                if (isMounted.current) {
+                    setScheduleWindow(Array.isArray(res.data?.items) ? res.data.items : []);
+                }
+            } catch (err) {
+                if (isMounted.current) {
+                    setScheduleWindow([]);
+                    setScheduleError(err.response?.data?.message || 'Failed to load work schedule');
+                }
+            }
+        };
+        fetchScheduleWindow();
+    }, [id]);
 
     // Format date (YYYY-MM-DD → dd/mm/yyyy)
     const formatDate = (dateStr) => {
@@ -280,6 +304,29 @@ export default function TeamMemberDetailPage() {
                 </div>
             </Card>
 
+            <Card className="mb-6">
+                <h2 className="text-lg font-semibold text-gray-700 mb-4">Lịch đăng ký 7 ngày</h2>
+                {scheduleError ? (
+                    <Alert color="warning">{scheduleError}</Alert>
+                ) : scheduleWindow.length === 0 ? (
+                    <Alert color="info">Không có dữ liệu lịch đăng ký ca.</Alert>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {scheduleWindow.map((item) => (
+                            <div key={item.workDate} className="border rounded p-3 flex items-center justify-between">
+                                <div>
+                                    <div className="font-medium">{formatDate(item.workDate)}</div>
+                                    <div className="text-xs text-gray-500">
+                                        {item.isWorkday ? 'Ngày làm việc' : (item.isHoliday ? 'Ngày lễ' : 'Cuối tuần')}
+                                    </div>
+                                </div>
+                                <ScheduleBadge scheduleType={item.scheduleType} />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
+
             {/* Monthly Attendance */}
             <Card>
                 <div className="flex justify-between items-center mb-4">
@@ -317,6 +364,7 @@ export default function TeamMemberDetailPage() {
                                 <Table.HeadCell>Check In</Table.HeadCell>
                                 <Table.HeadCell>Check Out</Table.HeadCell>
                                 <Table.HeadCell>Status</Table.HeadCell>
+                                <Table.HeadCell>Ca</Table.HeadCell>
                                 <Table.HeadCell>Work Time</Table.HeadCell>
                                 <Table.HeadCell>OT</Table.HeadCell>
                             </Table.Head>
@@ -332,6 +380,9 @@ export default function TeamMemberDetailPage() {
                                             <Badge color={statusColors[item.status] || 'gray'}>
                                                 {statusLabels[item.status] || 'Unknown'}
                                             </Badge>
+                                        </Table.Cell>
+                                        <Table.Cell>
+                                            <ScheduleBadge scheduleType={item.scheduleType} />
                                         </Table.Cell>
                                         <Table.Cell>{formatMinutes(item.workMinutes)}</Table.Cell>
                                         <Table.Cell>{formatMinutes(item.otMinutes)}</Table.Cell>

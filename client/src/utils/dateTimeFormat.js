@@ -30,6 +30,21 @@ export const formatMinutes = (minutes) => {
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 };
 
+export const formatDurationByMode = (minutes, mode = 'minutes') => {
+    if (minutes === null || minutes === undefined) return '-';
+    if (typeof minutes !== 'number' || Number.isNaN(minutes) || minutes < 0) return '-';
+
+    const normalizedMinutes = Math.floor(minutes);
+
+    if (mode === 'hours') {
+        const hours = Math.floor(normalizedMinutes / 60);
+        const mins = normalizedMinutes % 60;
+        return `${hours}h ${mins}m`;
+    }
+
+    return `${normalizedMinutes} phút`;
+};
+
 export const getMonthOptions = (count = 12) => {
     const options = [];
     const now = new Date();

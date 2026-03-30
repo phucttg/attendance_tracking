@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import MyAttendancePage from './pages/MyAttendancePage';
 import RequestsPage from './pages/RequestsPage';
+import MySchedulePage from './pages/MySchedulePage';
 import ApprovalsPage from './pages/ApprovalsPage';
 import TimesheetMatrixPage from './pages/TimesheetMatrixPage';
 import MonthlyReportPage from './pages/MonthlyReportPage';
@@ -66,6 +67,10 @@ export default function App() {
                 <Route
                     path="/requests"
                     element={<RequestsPage />}
+                />
+                <Route
+                    path="/my-schedule"
+                    element={<MySchedulePage />}
                 />
                 <Route
                     path="/profile"

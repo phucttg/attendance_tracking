@@ -4,7 +4,14 @@ import { Card, Table, Button, Spinner, Alert, Badge, Select, Label } from 'flowb
 import { HiArrowLeft, HiPencil, HiKey } from 'react-icons/hi';
 
 // API
-import { getTeams, getUserById, getUserAttendance, updateUser, resetPassword } from '../api/memberApi';
+import {
+    getTeams,
+    getUserAttendance,
+    getUserById,
+    getUserWorkSchedules,
+    resetPassword,
+    updateUser
+} from '../api/memberApi';
 
 // Components
 import ToastNotification from '../components/ui/ToastNotification';
@@ -15,6 +22,7 @@ import ResetPasswordModal from '../components/modals/ResetPasswordModal';
 import { useToast } from '../hooks/useToast';
 import { getCurrentMonth, formatDate, formatTime, formatMinutes, getMonthOptions } from '../utils/dateTimeFormat';
 import { STATUS_COLORS, STATUS_LABELS } from '../utils/statusConfig';
+import { ScheduleBadge } from '../components/ui';
 
 /**
  * AdminMemberDetailPage: Admin views member profile + monthly attendance history.
@@ -42,6 +50,8 @@ export default function AdminMemberDetailPage() {
     const [loading, setLoading] = useState(true);
     const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [attendanceError, setAttendanceError] = useState(''); // Distinguish API error vs no data
+    const [scheduleWindow, setScheduleWindow] = useState([]);
+    const [scheduleError, setScheduleError] = useState('');
     const [error, setError] = useState('');
 
     // Race condition protection: track latest request
@@ -131,6 +141,25 @@ export default function AdminMemberDetailPage() {
     useEffect(() => {
         fetchAttendance();
     }, [fetchAttendance]);
+
+    useEffect(() => {
+        const fetchScheduleWindow = async () => {
+            if (!id) return;
+            setScheduleError('');
+            try {
+                const res = await getUserWorkSchedules(id);
+                if (isMounted.current) {
+                    setScheduleWindow(Array.isArray(res.data?.items) ? res.data.items : []);
+                }
+            } catch (err) {
+                if (isMounted.current) {
+                    setScheduleWindow([]);
+                    setScheduleError(err.response?.data?.message || 'Failed to load work schedule');
+                }
+            }
+        };
+        fetchScheduleWindow();
+    }, [id]);
 
     // Edit member handler (simplified - uses EditMemberModal component)
     // Modal calls: onSubmit(data, userId) - errors propagate to modal's catch block
@@ -239,6 +268,29 @@ export default function AdminMemberDetailPage() {
                 </div>
             </Card>
 
+            <Card className="mb-6">
+                <h2 className="text-lg font-semibold text-gray-700 mb-4">Lịch đăng ký 7 ngày</h2>
+                {scheduleError ? (
+                    <Alert color="warning">{scheduleError}</Alert>
+                ) : scheduleWindow.length === 0 ? (
+                    <Alert color="info">Không có dữ liệu lịch đăng ký ca.</Alert>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {scheduleWindow.map((item) => (
+                            <div key={item.workDate} className="border rounded p-3 flex items-center justify-between">
+                                <div>
+                                    <div className="font-medium">{formatDate(item.workDate)}</div>
+                                    <div className="text-xs text-gray-500">
+                                        {item.isWorkday ? 'Ngày làm việc' : (item.isHoliday ? 'Ngày lễ' : 'Cuối tuần')}
+                                    </div>
+                                </div>
+                                <ScheduleBadge scheduleType={item.scheduleType} />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
+
             {/* Monthly Attendance */}
             <Card>
                 <div className="flex justify-between items-center mb-4">
@@ -276,6 +328,7 @@ export default function AdminMemberDetailPage() {
                                 <Table.HeadCell>Check In</Table.HeadCell>
                                 <Table.HeadCell>Check Out</Table.HeadCell>
                                 <Table.HeadCell>Status</Table.HeadCell>
+                                <Table.HeadCell>Ca</Table.HeadCell>
                                 <Table.HeadCell>Work Time</Table.HeadCell>
                                 <Table.HeadCell>OT</Table.HeadCell>
                             </Table.Head>
@@ -291,6 +344,9 @@ export default function AdminMemberDetailPage() {
                                             <Badge color={STATUS_COLORS[item.status] || 'gray'}>
                                                 {STATUS_LABELS[item.status] || 'Unknown'}
                                             </Badge>
+                                        </Table.Cell>
+                                        <Table.Cell>
+                                            <ScheduleBadge scheduleType={item.scheduleType} />
                                         </Table.Cell>
                                         <Table.Cell>{formatMinutes(item.workMinutes)}</Table.Cell>
                                         <Table.Cell>{formatMinutes(item.otMinutes)}</Table.Cell>

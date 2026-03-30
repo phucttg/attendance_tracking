@@ -22,6 +22,7 @@ export default function Layout() {
     const personalNavItems = [
         { to: '/dashboard', label: 'Dashboard', icon: HiHome, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
         { to: '/my-attendance', label: 'My Attendance', icon: HiClock, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
+        { to: '/my-schedule', label: 'My Schedule', icon: HiCalendar, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
         { to: '/requests', label: 'Requests', icon: HiDocumentText, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
         { to: '/profile', label: 'Profile', icon: HiUser, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
     ];
