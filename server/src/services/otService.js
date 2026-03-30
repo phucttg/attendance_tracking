@@ -1,14 +1,23 @@
 import mongoose from 'mongoose';
 import Request, { OT_MODES } from '../models/Request.js';
 import Attendance from '../models/Attendance.js';
+import WorkScheduleRegistration from '../models/WorkScheduleRegistration.js';
 import {
   getDateKey,
-  getOtDuration,
   getSeparatedOtDuration,
   getTodayDateKey,
-  isInOtPeriod
+  isWeekend
 } from '../utils/dateUtils.js';
 import { toValidDate, assertHasTzIfString } from './requestDateValidation.js';
+import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
+import {
+  formatMinutesAsTime,
+  getEarliestContinuousOtEndMinutes,
+  getOtThresholdMinutes,
+  getOtThresholdTimeForDate,
+  isFlexibleScheduleType,
+  normalizeScheduleType
+} from '../utils/schedulePolicy.js';
 
 const BUSINESS_TZ_OFFSET_MS = 7 * 60 * 60 * 1000;
 const OT_CROSS_MIDNIGHT_CUTOFF = '08:00';
@@ -24,6 +33,31 @@ const getTimeKeyInGmt7 = (date) => {
   const hh = String(shifted.getUTCHours()).padStart(2, '0');
   const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
+};
+
+const resolveEffectiveScheduleType = async (userId, date, attendanceRecord = null) => {
+  const attendanceType = normalizeScheduleType(attendanceRecord?.scheduleType);
+  if (attendanceType) {
+    return attendanceType;
+  }
+
+  const registration = await WorkScheduleRegistration.findOne({
+    userId,
+    workDate: date
+  })
+    .select('scheduleType')
+    .lean();
+
+  const registrationType = normalizeScheduleType(registration?.scheduleType);
+  return registrationType || 'SHIFT_1';
+};
+
+const isWorkdayDate = async (dateKey) => {
+  if (isWeekend(dateKey)) {
+    return false;
+  }
+  const holidayDates = await getHolidayDatesForMonth(dateKey.slice(0, 7));
+  return !holidayDates.has(dateKey);
 };
 
 /**
@@ -162,21 +196,44 @@ export const createOtRequest = async (userId, requestData) => {
 
   // Mode-specific validations before auto-extend/update.
   const existingAttendance = await Attendance.findOne({ userId, date })
-    .select('checkInAt checkOutAt')
+    .select(
+      'checkInAt checkOutAt scheduleType scheduledStartMinutes scheduledEndMinutes ' +
+      'lateGraceMinutes lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
+    )
     .lean();
+  const effectiveScheduleType = await resolveEffectiveScheduleType(userId, date, existingAttendance);
+  const thresholdTime = getOtThresholdTimeForDate(date, effectiveScheduleType)
+    || getOtThresholdTimeForDate(date, 'SHIFT_1');
+  const thresholdMinutes = getOtThresholdMinutes(effectiveScheduleType)
+    ?? getOtThresholdMinutes('SHIFT_1')
+    ?? (17 * 60 + 31);
+  const thresholdLabel = formatMinutesAsTime(thresholdMinutes) || '17:31';
+  const earliestContinuousEndMinutes = getEarliestContinuousOtEndMinutes(effectiveScheduleType, 30) ?? (18 * 60 + 1);
+  const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:01';
+  const isWorkday = await isWorkdayDate(date);
+
+  if (isWorkday && isFlexibleScheduleType(effectiveScheduleType)) {
+    const error = new Error('Không thể tạo OT cho lịch Linh hoạt vào ngày làm việc');
+    error.statusCode = 400;
+    throw error;
+  }
 
   if (otMode === 'CONTINUOUS') {
-    // Validation 3: same-day end time must be > 17:31 (OT period)
-    if (!isCrossMidnight && !isInOtPeriod(date, endTime)) {
-      const error = new Error('OT must start after 17:31. Please adjust your estimated end time.');
+    // Validation 3: same-day end time must be > shift OT threshold
+    if (!isCrossMidnight && (!thresholdTime || endTime <= thresholdTime)) {
+      const error = new Error(`OT must start after ${thresholdLabel}. Please adjust your estimated end time.`);
       error.statusCode = 400;
       throw error;
     }
 
-    // Validation 4: Minimum 30 minutes OT (B1)
-    const estimatedOtMinutes = getOtDuration(date, endTime);
+    // Validation 4: Minimum 30 minutes OT (B1) from shift threshold
+    const estimatedOtMinutes = thresholdTime
+      ? Math.floor((endTime.getTime() - thresholdTime.getTime()) / (1000 * 60))
+      : 0;
     if (estimatedOtMinutes < 30) {
-      const error = new Error('Minimum OT duration is 30 minutes');
+      const error = new Error(
+        `Minimum OT duration is 30 minutes (earliest valid end: ${earliestContinuousEndLabel})`
+      );
       error.statusCode = 400;
       throw error;
     }
@@ -212,8 +269,8 @@ export const createOtRequest = async (userId, requestData) => {
       }
     }
 
-    if (!isInOtPeriod(date, startTime)) {
-      const error = new Error('otStartTime must be after 17:31 (GMT+7)');
+    if (!thresholdTime || startTime <= thresholdTime) {
+      const error = new Error(`otStartTime must be after ${thresholdLabel} (GMT+7)`);
       error.statusCode = 400;
       throw error;
     }
@@ -244,6 +301,24 @@ export const createOtRequest = async (userId, requestData) => {
     }
   }
 
+  // Max pending per month (D1)
+  const month = date.substring(0, 7);
+  const pendingCount = await Request.countDocuments({
+    userId,
+    type: 'OT_REQUEST',
+    status: 'PENDING',
+    $or: [
+      { date: { $regex: `^${month}` } },
+      { checkInDate: { $regex: `^${month}` } }
+    ]
+  });
+
+  if (pendingCount >= 31) {
+    const error = new Error('Maximum 31 pending OT requests per month reached');
+    error.statusCode = 400;
+    throw error;
+  }
+
   // D2: Auto-extend - Check if PENDING request exists for same date.
   const existingRequest = await Request.findOneAndUpdate(
     {
@@ -267,24 +342,6 @@ export const createOtRequest = async (userId, requestData) => {
   if (existingRequest) {
     // Auto-extend successful
     return existingRequest;
-  }
-
-  // Max pending per month (D1)
-  const month = date.substring(0, 7);
-  const pendingCount = await Request.countDocuments({
-    userId,
-    type: 'OT_REQUEST',
-    status: 'PENDING',
-    $or: [
-      { date: { $regex: `^${month}` } },
-      { checkInDate: { $regex: `^${month}` } }
-    ]
-  });
-
-  if (pendingCount >= 31) {
-    const error = new Error('Maximum 31 pending OT requests per month reached');
-    error.statusCode = 400;
-    throw error;
   }
 
   if (otMode === 'CONTINUOUS') {

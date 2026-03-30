@@ -1,8 +1,10 @@
 import User from '../models/User.js';
 import Attendance from '../models/Attendance.js';
 import Request from '../models/Request.js';
+import WorkScheduleRegistration from '../models/WorkScheduleRegistration.js';
 import { computeAttendance } from '../utils/attendanceCompute.js';
 import { isWeekend, getTodayDateKey, getDateRange } from '../utils/dateUtils.js';
+import { isScheduleEnforcedForDate, normalizeScheduleType } from '../utils/schedulePolicy.js';
 
 const STATUS_COLOR_MAP = {
     ON_TIME: 'green',
@@ -13,7 +15,8 @@ const STATUS_COLOR_MAP = {
     MISSING_CHECKIN: 'orange', // Edge case: checkout without checkin
     WEEKEND_OR_HOLIDAY: 'gray',
     LEAVE: 'cyan', // P1 Fix: Add LEAVE color per RULES.md
-    ABSENT: 'white',
+    UNREGISTERED: 'orange',
+    ABSENT: 'red',
     WORKING: 'blue', // Corrected per RULES.md (was white)
     UNKNOWN: 'white'
 };
@@ -104,7 +107,18 @@ async function buildTimesheetMatrix(users, month, holidayDates) {
         userId: { $in: userIds },
         date: { $gte: monthStart, $lte: monthEnd }
     })
-        .select('userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes')
+        .select(
+            'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+            'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
+            'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
+        )
+        .lean();
+
+    const scheduleRegistrations = await WorkScheduleRegistration.find({
+        userId: { $in: userIds },
+        workDate: { $gte: monthStart, $lte: monthEnd }
+    })
+        .select('userId workDate scheduleType')
         .lean();
 
     // Group attendance by "userId_date" for O(1) lookup
@@ -112,6 +126,12 @@ async function buildTimesheetMatrix(users, month, holidayDates) {
     for (const record of attendanceRecords) {
         const key = `${String(record.userId)}_${record.date}`;
         attendanceMap.set(key, record);
+    }
+
+    const scheduleMap = new Map();
+    for (const registration of scheduleRegistrations) {
+        const key = `${String(registration.userId)}_${registration.workDate}`;
+        scheduleMap.set(key, normalizeScheduleType(registration.scheduleType));
     }
 
     // Phase 3: Query approved leaves for all users in this month
@@ -151,16 +171,18 @@ async function buildTimesheetMatrix(users, month, holidayDates) {
             const dateKey = `${month}-${String(day).padStart(2, '0')}`;
             const mapKey = `${String(user._id)}_${dateKey}`;
             const attendance = attendanceMap.get(mapKey);
+            const registeredScheduleType = scheduleMap.get(mapKey) || null;
 
-            const { status, colorKey } = computeCellStatus(
+            const { status, colorKey, scheduleType } = computeCellStatus(
                 dateKey,
                 attendance,
+                registeredScheduleType,
                 holidayDates,
                 userLeaveDates,  // Phase 3: Pass per-user leaveDates
                 todayDateKey
             );
 
-            return { date: dateKey, status, colorKey };
+            return { date: dateKey, status, colorKey, scheduleType };
         });
 
         return {
@@ -181,14 +203,20 @@ async function buildTimesheetMatrix(users, month, holidayDates) {
  * Handles: weekend/holiday, leave, absent (no record), and existing attendance.
  * Phase 3: Now accepts leaveDates for LEAVE status detection.
  */
-function computeCellStatus(dateKey, attendance, holidayDates, leaveDates, todayDateKey) {
+function computeCellStatus(dateKey, attendance, registeredScheduleType, holidayDates, leaveDates, todayDateKey) {
     // Weekend or Holiday check first
     if (isWeekend(dateKey) || holidayDates.has(dateKey)) {
         return {
             status: 'WEEKEND_OR_HOLIDAY',
-            colorKey: STATUS_COLOR_MAP.WEEKEND_OR_HOLIDAY
+            colorKey: STATUS_COLOR_MAP.WEEKEND_OR_HOLIDAY,
+            scheduleType: null
         };
     }
+
+    const isFutureDate = dateKey > todayDateKey;
+    const isTodayDate = dateKey === todayDateKey;
+    const scheduleEnforced = isScheduleEnforcedForDate(dateKey);
+    const hasValidScheduleRegistration = Boolean(registeredScheduleType);
 
     // No attendance record
     if (!attendance) {
@@ -196,21 +224,54 @@ function computeCellStatus(dateKey, attendance, holidayDates, leaveDates, todayD
         if (leaveDates && leaveDates.has(dateKey)) {
             return {
                 status: 'LEAVE',
-                colorKey: STATUS_COLOR_MAP.LEAVE
+                colorKey: STATUS_COLOR_MAP.LEAVE,
+                scheduleType: null
             };
         }
 
-        // Future date or today without check-in -> not ABSENT yet
-        if (dateKey >= todayDateKey) {
+        if (isFutureDate) {
             return {
                 status: null,
-                colorKey: 'white'  // P1 Fix: Use neutral color for future/today
+                colorKey: 'white',
+                scheduleType: registeredScheduleType
             };
         }
-        // Past workday with no record -> ABSENT
+
+        if (scheduleEnforced) {
+            if (!hasValidScheduleRegistration) {
+                return {
+                    status: 'UNREGISTERED',
+                    colorKey: STATUS_COLOR_MAP.UNREGISTERED,
+                    scheduleType: null
+                };
+            }
+            if (isTodayDate) {
+                return {
+                    status: null,
+                    colorKey: 'white',
+                    scheduleType: registeredScheduleType
+                };
+            }
+            return {
+                status: 'ABSENT',
+                colorKey: STATUS_COLOR_MAP.ABSENT,
+                scheduleType: registeredScheduleType
+            };
+        }
+
+        if (isTodayDate) {
+            return {
+                status: null,
+                colorKey: 'white',
+                scheduleType: registeredScheduleType
+            };
+        }
+
+        // Legacy past workday with no record -> ABSENT
         return {
             status: 'ABSENT',
-            colorKey: STATUS_COLOR_MAP.ABSENT
+            colorKey: STATUS_COLOR_MAP.ABSENT,
+            scheduleType: null
         };
     }
 
@@ -222,14 +283,29 @@ function computeCellStatus(dateKey, attendance, holidayDates, leaveDates, todayD
             checkOutAt: attendance.checkOutAt,
             otApproved: !!attendance.otApproved,
             otMode: attendance.otMode,
-            separatedOtMinutes: attendance.separatedOtMinutes
+            separatedOtMinutes: attendance.separatedOtMinutes,
+            scheduleType: attendance.scheduleType,
+            scheduledStartMinutes: attendance.scheduledStartMinutes,
+            scheduledEndMinutes: attendance.scheduledEndMinutes,
+            lateGraceMinutes: attendance.lateGraceMinutes,
+            lateTrackingEnabled: attendance.lateTrackingEnabled,
+            earlyLeaveTrackingEnabled: attendance.earlyLeaveTrackingEnabled,
+            scheduleSource: attendance.scheduleSource
         },
         holidayDates,
-        leaveDates  // Phase 3: Pass leaveDates
+        leaveDates,
+        {
+            hasValidScheduleRegistration,
+            isScheduleEnforcementActive: scheduleEnforced
+        }
     );
 
+    const status = computed.status === 'UNKNOWN' ? null : computed.status;
+    const scheduleType = normalizeScheduleType(attendance.scheduleType) || registeredScheduleType || null;
+
     return {
-        status: computed.status,
-        colorKey: STATUS_COLOR_MAP[computed.status] || 'white'
+        status,
+        colorKey: STATUS_COLOR_MAP[status] || 'white',
+        scheduleType
     };
 }

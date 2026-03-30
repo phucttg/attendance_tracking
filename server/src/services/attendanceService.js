@@ -2,11 +2,29 @@ import Attendance from '../models/Attendance.js';
 import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import Request from '../models/Request.js';
-import { getTodayDateKey, isWeekend } from '../utils/dateUtils.js';
+import WorkScheduleRegistration from '../models/WorkScheduleRegistration.js';
+import { getDateRange, getTodayDateKey, isWeekend } from '../utils/dateUtils.js';
 import { computeAttendance } from '../utils/attendanceCompute.js';
 import { clampPage } from '../utils/pagination.js';
 import { getAdjustRequestMaxDays, getAdjustRequestMaxMs, getCheckoutGraceMs } from '../utils/graceConfig.js';
 import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
+import {
+  buildAttendanceScheduleSnapshot,
+  isScheduleEnforcedForDate,
+  normalizeScheduleType
+} from '../utils/schedulePolicy.js';
+
+const isWorkdayDate = (dateKey, holidayDates = new Set()) =>
+  !isWeekend(dateKey) && !holidayDates.has(dateKey);
+
+const toComputedStatus = (status) => (status === 'UNKNOWN' ? null : status);
+
+const resolveAttendanceScheduleType = (attendanceRecord, registeredScheduleType = null) => {
+  const snapshotType = normalizeScheduleType(attendanceRecord?.scheduleType);
+  if (snapshotType) return snapshotType;
+  const registeredType = normalizeScheduleType(registeredScheduleType);
+  return registeredType || null;
+};
 
 /**
  * Check-in: Create today's attendance with checkInAt timestamp.
@@ -87,13 +105,37 @@ export const checkIn = async (userId) => {
     throw error;
   }
 
+  const holidayDates = await getHolidayDatesForMonth(dateKey.slice(0, 7));
+  const isTodayWorkday = isWorkdayDate(dateKey, holidayDates);
+
+  const registration = await WorkScheduleRegistration.findOne({
+    userId,
+    workDate: dateKey
+  }).select('scheduleType').lean();
+
+  if (isTodayWorkday && !registration?.scheduleType) {
+    const error = new Error('Schedule is required before check-in');
+    error.statusCode = 400;
+    error.code = 'SCHEDULE_REQUIRED';
+    error.payload = {
+      redirectTo: '/my-schedule',
+      workDate: dateKey
+    };
+    throw error;
+  }
+
+  const attendanceSnapshot = (isTodayWorkday && registration?.scheduleType)
+    ? buildAttendanceScheduleSnapshot(registration.scheduleType, 'REGISTERED')
+    : buildAttendanceScheduleSnapshot('SHIFT_1', 'LEGACY_BACKFILL');
+
   // Create today's attendance (rely on unique constraint for duplicate detection)
   let attendance;
   try {
     attendance = await Attendance.create({
       userId,
       date: dateKey,
-      checkInAt: new Date()
+      checkInAt: new Date(),
+      ...attendanceSnapshot
     });
   } catch (err) {
     // Unique constraint violation: user already checked in today
@@ -140,6 +182,7 @@ export const checkIn = async (userId) => {
     date: attendance.date,
     checkInAt: attendance.checkInAt,
     checkOutAt: attendance.checkOutAt,
+    scheduleType: attendance.scheduleType || null,
     otApproved: !!attendance.otApproved,
     otMode: attendance.otMode || null,
     separatedOtMinutes: attendance.separatedOtMinutes ?? null
@@ -242,7 +285,8 @@ export const checkOut = async (userId) => {
     userId: updated.userId,
     date: updated.date,
     checkInAt: updated.checkInAt,
-    checkOutAt: updated.checkOutAt
+    checkOutAt: updated.checkOutAt,
+    scheduleType: updated.scheduleType || null
   };
 };
 
@@ -280,19 +324,38 @@ export const getMonthlyHistory = async (userId, month, holidayDates = new Set(),
     `${month}-${String(i + 1).padStart(2, '0')}`
   );
 
+  const monthStart = `${month}-01`;
+  const monthEnd = `${month}-${String(endDay).padStart(2, '0')}`;
+
   // Fetch existing attendance records for the month
   const records = await Attendance.find({
     userId,
     date: { $regex: `^${month}` }
   })
-  .select('date checkInAt checkOutAt otApproved otMode separatedOtMinutes')
+  .select(
+    'date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+    'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
+    'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
+  )
   .lean();
+
+  const registrations = await WorkScheduleRegistration.find({
+    userId,
+    workDate: { $gte: monthStart, $lte: monthEnd }
+  })
+    .select('workDate scheduleType')
+    .lean();
 
   // Build attendance lookup map for O(1) access
   const attendanceMap = new Map(records.map(r => [r.date, r]));
+  const registrationMap = new Map(registrations.map((item) => [item.workDate, item]));
 
   // Process ALL days in month (including days without attendance records)
   return allDates.map(dateKey => {
+    const registration = registrationMap.get(dateKey) || null;
+    const isWorkday = isWorkdayDate(dateKey, holidayDates);
+    const hasValidScheduleRegistration = Boolean(isWorkday && registration?.scheduleType);
+
     // Get existing record or create synthetic empty record
     const record = attendanceMap.get(dateKey) || {
       date: dateKey,
@@ -300,7 +363,8 @@ export const getMonthlyHistory = async (userId, month, holidayDates = new Set(),
       checkOutAt: null,
       otApproved: false,
       otMode: null,
-      separatedOtMinutes: null
+      separatedOtMinutes: null,
+      scheduleType: null
     };
 
     // Compute status for this day (handles LEAVE, ABSENT, WEEKEND_OR_HOLIDAY, etc.)
@@ -311,17 +375,33 @@ export const getMonthlyHistory = async (userId, month, holidayDates = new Set(),
         checkOutAt: record.checkOutAt,
         otApproved: record.otApproved,
         otMode: record.otMode,
-        separatedOtMinutes: record.separatedOtMinutes
+        separatedOtMinutes: record.separatedOtMinutes,
+        scheduleType: record.scheduleType,
+        scheduledStartMinutes: record.scheduledStartMinutes,
+        scheduledEndMinutes: record.scheduledEndMinutes,
+        lateGraceMinutes: record.lateGraceMinutes,
+        lateTrackingEnabled: record.lateTrackingEnabled,
+        earlyLeaveTrackingEnabled: record.earlyLeaveTrackingEnabled,
+        scheduleSource: record.scheduleSource
       },
       holidayDates,
-      leaveDates
+      leaveDates,
+      {
+        hasValidScheduleRegistration,
+        isScheduleEnforcementActive: isScheduleEnforcedForDate(dateKey)
+      }
     );
+
+    const scheduleType = isWorkday
+      ? resolveAttendanceScheduleType(record, registration?.scheduleType || null)
+      : null;
 
     return {
       date: record.date,
       checkInAt: record.checkInAt,
       checkOutAt: record.checkOutAt,
-      status: computed.status,
+      scheduleType,
+      status: toComputedStatus(computed.status),
       lateMinutes: computed.lateMinutes,
       workMinutes: computed.workMinutes,
       otMinutes: computed.otMinutes,
@@ -405,7 +485,18 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
     userId: { $in: userIds },
     date: todayKey
   })
-    .select('userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes')
+    .select(
+      'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+      'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
+      'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
+    )
+    .lean();
+
+  const todayRegistrations = await WorkScheduleRegistration.find({
+    userId: { $in: userIds },
+    workDate: todayKey
+  })
+    .select('userId scheduleType')
     .lean();
 
   // Step 3: Map attendance to user in memory
@@ -414,10 +505,20 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
     attendanceMap.set(String(record.userId), record);
   }
 
+  const scheduleMap = new Map();
+  for (const registration of todayRegistrations) {
+    scheduleMap.set(String(registration.userId), registration.scheduleType || null);
+  }
+
+  const isTodayWorkday = isWorkdayDate(todayKey, holidayDates);
+  const isTodayScheduleEnforced = isScheduleEnforcedForDate(todayKey);
+
   // Step 4: Compute status for each user
   const items = users.map(user => {
     const attendance = attendanceMap.get(String(user._id)) || null;
-    const isTodayWeekendOrHoliday = isWeekend(todayKey) || holidayDates.has(todayKey);
+    const registeredScheduleType = scheduleMap.get(String(user._id)) || null;
+    const hasValidScheduleRegistration = Boolean(isTodayWorkday && registeredScheduleType);
+    const isTodayWeekendOrHoliday = !isTodayWorkday;
 
     // Compute status following RULES.md priority
     let status = null;
@@ -429,7 +530,20 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
     // - weekend/holiday => WEEKEND_OR_HOLIDAY
     // - workday => null (NOT ABSENT for today)
     if (!attendance) {
-      status = isTodayWeekendOrHoliday ? 'WEEKEND_OR_HOLIDAY' : null;
+      const computed = computeAttendance(
+        {
+          date: todayKey,
+          checkInAt: null,
+          checkOutAt: null
+        },
+        holidayDates,
+        new Set(),
+        {
+          hasValidScheduleRegistration,
+          isScheduleEnforcementActive: isTodayScheduleEnforced
+        }
+      );
+      status = toComputedStatus(computed.status);
     } else {
       // Has attendance record: always compute to include work/OT metrics
       const computed = computeAttendance(
@@ -439,16 +553,31 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
           checkOutAt: attendance.checkOutAt,
           otApproved: attendance.otApproved,
           otMode: attendance.otMode,
-          separatedOtMinutes: attendance.separatedOtMinutes
+          separatedOtMinutes: attendance.separatedOtMinutes,
+          scheduleType: attendance.scheduleType,
+          scheduledStartMinutes: attendance.scheduledStartMinutes,
+          scheduledEndMinutes: attendance.scheduledEndMinutes,
+          lateGraceMinutes: attendance.lateGraceMinutes,
+          lateTrackingEnabled: attendance.lateTrackingEnabled,
+          earlyLeaveTrackingEnabled: attendance.earlyLeaveTrackingEnabled,
+          scheduleSource: attendance.scheduleSource
         },
         holidayDates,
-        new Set()  // Phase 3: Pass empty leaveDates (today view doesn't show LEAVE)
+        new Set(),  // today view doesn't show LEAVE
+        {
+          hasValidScheduleRegistration,
+          isScheduleEnforcementActive: isTodayScheduleEnforced
+        }
       );
-      status = computed.status;
+      status = toComputedStatus(computed.status);
       lateMinutes = computed.lateMinutes;
       workMinutes = computed.workMinutes;
       otMinutes = computed.otMinutes;
     }
+
+    const scheduleType = isTodayWorkday
+      ? resolveAttendanceScheduleType(attendance, registeredScheduleType)
+      : null;
 
     return {
       user: {
@@ -467,6 +596,7 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
         checkInAt: attendance.checkInAt,
         checkOutAt: attendance.checkOutAt
       } : null,
+      scheduleType,
       computed: {
         status,
         lateMinutes,
@@ -617,7 +747,8 @@ export const forceCheckoutAttendance = async (attendanceId, checkOutDate) => {
     userId: attendance.userId,
     date: attendance.date,
     checkInAt: attendance.checkInAt,
-    checkOutAt: attendance.checkOutAt
+    checkOutAt: attendance.checkOutAt,
+    scheduleType: attendance.scheduleType || null
   };
 };
 

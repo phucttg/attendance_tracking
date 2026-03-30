@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Attendance from '../models/Attendance.js';
 import Request from '../models/Request.js';
+import WorkScheduleRegistration from '../models/WorkScheduleRegistration.js';
 import { computeAttendance, computePotentialOtMinutes } from '../utils/attendanceCompute.js';
 import {
     countWorkdays,
@@ -9,6 +10,7 @@ import {
     getTodayDateKey,
     isWeekend
 } from '../utils/dateUtils.js';
+import { isScheduleEnforcedForDate, normalizeScheduleType } from '../utils/schedulePolicy.js';
 
 const PRESENT_STATUSES = new Set([
     'ON_TIME',
@@ -92,16 +94,33 @@ function getLeaveByTypeCounts(leaveTypeByDate) {
     return leaveByType;
 }
 
-function computeAbsentDays(elapsedWorkdaySet, presentDateSet, leaveDateSetElapsedWorkday) {
+function computeMissingDays(
+    elapsedWorkdaySet,
+    presentDateSet,
+    leaveDateSetElapsedWorkday,
+    registrationDateSet
+) {
     let absentDays = 0;
+    let unregisteredDays = 0;
 
     for (const dateKey of elapsedWorkdaySet) {
-        if (!presentDateSet.has(dateKey) && !leaveDateSetElapsedWorkday.has(dateKey)) {
+        if (presentDateSet.has(dateKey) || leaveDateSetElapsedWorkday.has(dateKey)) {
+            continue;
+        }
+
+        if (!isScheduleEnforcedForDate(dateKey)) {
             absentDays += 1;
+            continue;
+        }
+
+        if (registrationDateSet.has(dateKey)) {
+            absentDays += 1;
+        } else {
+            unregisteredDays += 1;
         }
     }
 
-    return absentDays;
+    return { absentDays, unregisteredDays };
 }
 
 function addLeaveDatesToAggregate(targetSet, leaveStart, leaveEnd, leaveType, holidayDates, leaveTypeByDate = null) {
@@ -195,8 +214,19 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         userId: { $in: userIds },
         date: { $gte: monthStart, $lte: monthEnd }
     })
-        .select('userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes')
+        .select(
+            'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+            'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
+            'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
+        )
         .sort({ date: 1, checkInAt: 1 })
+        .lean();
+
+    const scheduleRegistrations = await WorkScheduleRegistration.find({
+        userId: { $in: userIds },
+        workDate: { $gte: monthStart, $lte: monthEnd }
+    })
+        .select('userId workDate scheduleType')
         .lean();
 
     const leaveRecords = await Request.find({
@@ -268,6 +298,18 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         }
     }
 
+    const registrationByUser = new Map();
+    for (const registration of scheduleRegistrations) {
+        const key = String(registration.userId);
+        if (!registrationByUser.has(key)) {
+            registrationByUser.set(key, new Set());
+        }
+        const scheduleType = normalizeScheduleType(registration.scheduleType);
+        if (scheduleType) {
+            registrationByUser.get(key).add(registration.workDate);
+        }
+    }
+
     // Compute summary for each user
     const summary = users.map(user => {
         const userKey = String(user._id);
@@ -276,10 +318,12 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         const leaveAggregate = leaveByUser.get(userKey) || createEmptyLeaveAggregate();
         const leaveByType = getLeaveByTypeCounts(leaveAggregate.leaveTypeByDate);
         const leaveDays = leaveAggregate.leaveDateSetFull.size;
-        const absentDays = computeAbsentDays(
+        const registrationDateSet = registrationByUser.get(userKey) || new Set();
+        const { absentDays, unregisteredDays } = computeMissingDays(
             elapsedWorkdaySet,
             computed.presentDateSet,
-            leaveAggregate.leaveDateSetElapsedWorkday
+            leaveAggregate.leaveDateSetElapsedWorkday,
+            registrationDateSet
         );
         const teamName = user?.teamId && typeof user.teamId === 'object'
             ? (user.teamId.name || null)
@@ -294,6 +338,7 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
             },
             totalWorkdays,
             presentDays: computed.presentDays,
+            unregisteredDays,
             absentDays,
             leaveDays,
             leaveByType,
@@ -333,7 +378,14 @@ function computeUserMonthlySummary(records, holidayDates) {
                 checkOutAt: record.checkOutAt,
                 otApproved: record.otApproved,
                 otMode: record.otMode,
-                separatedOtMinutes: record.separatedOtMinutes
+                separatedOtMinutes: record.separatedOtMinutes,
+                scheduleType: record.scheduleType,
+                scheduledStartMinutes: record.scheduledStartMinutes,
+                scheduledEndMinutes: record.scheduledEndMinutes,
+                lateGraceMinutes: record.lateGraceMinutes,
+                lateTrackingEnabled: record.lateTrackingEnabled,
+                earlyLeaveTrackingEnabled: record.earlyLeaveTrackingEnabled,
+                scheduleSource: record.scheduleSource
             },
             holidayDates,
             new Set()  // Phase 3: Pass empty leaveDates (aggregates don't count leave days)
@@ -370,7 +422,15 @@ function computeUserMonthlySummary(records, holidayDates) {
             // Unapproved: calculate potential OT (what they WOULD have earned)
             // Defensive: Require valid check-in to prevent counting bad data
             if (record.checkOutAt && record.checkInAt) {
-                const potentialOt = computePotentialOtMinutes(record.date, record.checkOutAt);
+                const potentialOt = computePotentialOtMinutes(record.date, record.checkOutAt, {
+                    scheduleType: record.scheduleType,
+                    scheduledStartMinutes: record.scheduledStartMinutes,
+                    scheduledEndMinutes: record.scheduledEndMinutes,
+                    lateGraceMinutes: record.lateGraceMinutes,
+                    lateTrackingEnabled: record.lateTrackingEnabled,
+                    earlyLeaveTrackingEnabled: record.earlyLeaveTrackingEnabled,
+                    scheduleSource: record.scheduleSource
+                });
                 unapprovedOtMinutes += potentialOt;
             }
         }

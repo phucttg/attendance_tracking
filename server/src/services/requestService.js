@@ -2,11 +2,11 @@ import mongoose from 'mongoose';
 import Request from '../models/Request.js';
 import User from '../models/User.js';
 import Attendance from '../models/Attendance.js';
+import WorkScheduleRegistration from '../models/WorkScheduleRegistration.js';
 import {
   buildOtPreview,
   getDateKey,
   getSeparatedOtDuration,
-  isInOtPeriod,
   isWeekend
 } from '../utils/dateUtils.js';
 import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
@@ -21,6 +21,14 @@ import {
 import { createAdjustTimeRequest } from './adjustTimeService.js';
 import { createLeaveRequest, getApprovedLeaveDates } from './leaveService.js';
 import { createOtRequest, cancelOtRequest } from './otService.js';
+import {
+  formatMinutesAsTime,
+  getEarliestContinuousOtEndMinutes,
+  getOtThresholdMinutes,
+  getOtThresholdTimeForDate,
+  isFlexibleScheduleType,
+  normalizeScheduleType
+} from '../utils/schedulePolicy.js';
 
 /**
  * Router function: Create request of any type
@@ -220,6 +228,30 @@ const attachOtPreview = (requestDoc) => {
     requestDoc.estimatedEndTime || null
   );
   return requestDoc;
+};
+
+const resolveEffectiveOtScheduleType = async (userId, dateKey, attendance, session) => {
+  const attendanceType = normalizeScheduleType(attendance?.scheduleType);
+  if (attendanceType) {
+    return attendanceType;
+  }
+
+  const query = WorkScheduleRegistration.findOne({
+    userId,
+    workDate: dateKey
+  }).select('scheduleType');
+  const registration = session ? await query.session(session).lean() : await query.lean();
+
+  const registrationType = normalizeScheduleType(registration?.scheduleType);
+  return registrationType || 'SHIFT_1';
+};
+
+const isWorkdayForDate = async (dateKey) => {
+  if (isWeekend(dateKey)) {
+    return false;
+  }
+  const holidays = await getHolidayDatesForMonth(dateKey.slice(0, 7));
+  return !holidays.has(dateKey);
 };
 
 /**
@@ -455,10 +487,70 @@ async function approveRequestCore(requestId, approver, session) {
     const attendanceQuery = Attendance.findOne({
       userId: existingRequest.userId._id,
       date: existingRequest.date
-    }).select('checkInAt checkOutAt otApproved').lean();
+    }).select(
+      'checkInAt checkOutAt otApproved scheduleType scheduledStartMinutes scheduledEndMinutes ' +
+      'lateGraceMinutes lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
+    ).lean();
     const attendance = session ? await attendanceQuery.session(session) : await attendanceQuery;
+    const effectiveScheduleType = await resolveEffectiveOtScheduleType(
+      existingRequest.userId._id,
+      existingRequest.date,
+      attendance,
+      session
+    );
+    const isWorkday = await isWorkdayForDate(existingRequest.date);
+    if (isWorkday && isFlexibleScheduleType(effectiveScheduleType)) {
+      const error = new Error('Cannot approve OT for FLEXIBLE schedule on workday');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const thresholdTime = getOtThresholdTimeForDate(existingRequest.date, effectiveScheduleType)
+      || getOtThresholdTimeForDate(existingRequest.date, 'SHIFT_1');
+    const thresholdMinutes = getOtThresholdMinutes(effectiveScheduleType)
+      ?? getOtThresholdMinutes('SHIFT_1')
+      ?? (17 * 60 + 31);
+    const thresholdLabel = formatMinutesAsTime(thresholdMinutes) || '17:31';
+    const earliestContinuousEndMinutes = getEarliestContinuousOtEndMinutes(effectiveScheduleType, 30)
+      ?? (18 * 60 + 1);
+    const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:01';
 
     if (otMode === 'CONTINUOUS') {
+      const estimatedEndTime = existingRequest.estimatedEndTime
+        ? new Date(existingRequest.estimatedEndTime)
+        : null;
+      if (!estimatedEndTime || isNaN(estimatedEndTime.getTime())) {
+        const error = new Error('Cannot approve OT: invalid estimatedEndTime');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const requestDateKey = existingRequest.date;
+      const nextDateKey = (() => {
+        const [year, month, day] = requestDateKey.split('-').map(Number);
+        const nextDate = new Date(Date.UTC(year, month - 1, day + 1, 12, 0, 0));
+        return nextDate.toISOString().slice(0, 10);
+      })();
+      const endDateKey = getDateKey(estimatedEndTime);
+      const isCrossMidnight = endDateKey === nextDateKey;
+
+      if (!isCrossMidnight && thresholdTime && estimatedEndTime <= thresholdTime) {
+        const error = new Error(`Cannot approve OT: estimatedEndTime must be after ${thresholdLabel} (GMT+7)`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const estimatedMinutesFromThreshold = thresholdTime
+        ? Math.floor((estimatedEndTime.getTime() - thresholdTime.getTime()) / (1000 * 60))
+        : 0;
+      if (estimatedMinutesFromThreshold < 30) {
+        const error = new Error(
+          `Cannot approve OT: minimum duration is 30 minutes (earliest valid end: ${earliestContinuousEndLabel})`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
       // Legacy invariant: request must be submitted/updated before checkout.
       // Allow approval when there is no attendance yet (future/pre-checkin)
       // or attendance exists but checkout has not happened.
@@ -493,8 +585,8 @@ async function approveRequestCore(requestId, approver, session) {
         throw error;
       }
 
-      if (!isInOtPeriod(existingRequest.date, otStartTime)) {
-        const error = new Error('Cannot approve separated OT: otStartTime must be after 17:31 (GMT+7)');
+      if (!thresholdTime || otStartTime <= thresholdTime) {
+        const error = new Error(`Cannot approve separated OT: otStartTime must be after ${thresholdLabel} (GMT+7)`);
         error.statusCode = 400;
         throw error;
       }

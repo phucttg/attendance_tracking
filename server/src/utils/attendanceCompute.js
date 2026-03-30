@@ -1,88 +1,113 @@
-import { isToday, isWeekend, getMinutesDiff, createTimeInGMT7, getDateKey } from './dateUtils.js';
+import {
+  isToday,
+  isWeekend,
+  getMinutesDiff,
+  createTimeInGMT7,
+  getDateKey,
+  getTodayDateKey
+} from './dateUtils.js';
+import {
+  getLateThresholdForDate,
+  getOtThresholdTimeForDate,
+  getShiftEndTimeForDate,
+  getShiftStartTimeForDate,
+  isFlexibleScheduleType,
+  isScheduleEnforcedForDate,
+  resolveAttendanceScheduleSnapshot
+} from './schedulePolicy.js';
 
 /**
  * Normalize dateKey to "YYYY-MM-DD" format in GMT+7.
- * Handles: Date object, ISO string, or already formatted string.
- * @param {Date|string} date - Date to normalize
- * @returns {string} "YYYY-MM-DD" format in GMT+7
+ * Handles Date, ISO string, and already formatted string.
+ *
+ * @param {Date|string} date
+ * @returns {string}
  */
 function normalizeDateKey(date) {
   if (!date) return '';
-  // If already "YYYY-MM-DD" format (10 chars, has dashes)
+
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    // P2 Fix (Issue #7): Validate calendar date (reject 2026-13-99, 2026-02-30, etc.)
-    // Even if format is correct, the date might not exist in calendar
     const [year, month, day] = date.split('-').map(Number);
     const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    if (testDate.getUTCFullYear() !== year ||
-        testDate.getUTCMonth() !== month - 1 ||
-        testDate.getUTCDate() !== day) {
-      return '';  // Invalid calendar date (auto-rolled by Date constructor)
+    if (
+      testDate.getUTCFullYear() !== year ||
+      testDate.getUTCMonth() !== month - 1 ||
+      testDate.getUTCDate() !== day
+    ) {
+      return '';
     }
     return date;
   }
-  // If ISO string like "2026-01-22T01:45:00.000Z"
-  // Fix A: Convert to Date first for proper GMT+7 boundary detection
-  // Example: "2026-01-21T18:30:00.000Z" in GMT+7 is 01:30 Jan 22, not Jan 21
+
   if (typeof date === 'string' && date.includes('T')) {
-    const d = new Date(date);
-    if (!isNaN(d.getTime())) return getDateKey(d);
-    // Invalid ISO: try to extract YYYY-MM-DD prefix, validate format
-    const maybe = date.split('T')[0];
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(maybe)) {
-      return '';
-    }
-    // P2 Fix (Issue #7): Validate calendar date (reject 2026-13-99, 2026-02-30, etc.)
-    const [year, month, day] = maybe.split('-').map(Number);
-    const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    if (testDate.getUTCFullYear() !== year ||
-        testDate.getUTCMonth() !== month - 1 ||
-        testDate.getUTCDate() !== day) {
-      return '';  // Invalid calendar date (auto-rolled by Date constructor)
-    }
-    return maybe;
+    const parsed = new Date(date);
+    if (!isNaN(parsed.getTime())) return getDateKey(parsed);
+
+    const maybeDate = date.split('T')[0];
+    return /^\d{4}-\d{2}-\d{2}$/.test(maybeDate) ? maybeDate : '';
   }
-  // If Date object - use getDateKey for proper GMT+7 conversion
-  // Fix B: toISOString() returns UTC which can shift the date boundary
+
   if (date instanceof Date) {
-    // P2 Fix (Issue #1): Guard against Invalid Date to prevent "Invalid Date" string return
     return isNaN(date.getTime()) ? '' : getDateKey(date);
   }
-  // Fallback: return empty string to fail-safe (won't match any dateKey)
-  // Prevents garbage strings like "1234567890" or "Tue Jan 27" from being used
+
   return '';
 }
 
 /**
- * Normalize timestamp to Date object for consistent comparisons.
- * @param {Date|string|number} timestamp - Timestamp to normalize
- * @returns {Date|null} Date object or null if invalid
+ * Normalize timestamp to Date object.
+ *
+ * @param {Date|string|number|null|undefined} timestamp
+ * @returns {Date|null}
  */
 function normalizeTimestamp(timestamp) {
   if (!timestamp) return null;
-  // P1 Fix (Bug #2): Check Invalid Date objects before returning
   if (timestamp instanceof Date) {
     return isNaN(timestamp.getTime()) ? null : timestamp;
   }
-  // String or number -> convert to Date
-  const date = new Date(timestamp);
-  return isNaN(date.getTime()) ? null : date;
+  const parsed = new Date(timestamp);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function computeNoAttendanceStatus(dateKey, leaveDates, options = {}) {
+  const todayKey = getTodayDateKey();
+  const today = dateKey === todayKey;
+  const isFuture = dateKey > todayKey;
+  const hasValidScheduleRegistration = !!options.hasValidScheduleRegistration;
+  const scheduleEnforced = typeof options.isScheduleEnforcementActive === 'boolean'
+    ? options.isScheduleEnforcementActive
+    : isScheduleEnforcedForDate(dateKey);
+
+  if (leaveDates.has(dateKey)) {
+    return 'LEAVE';
+  }
+
+  if (isFuture) {
+    return 'UNKNOWN';
+  }
+
+  if (!scheduleEnforced) {
+    return today ? 'UNKNOWN' : 'ABSENT';
+  }
+
+  if (!hasValidScheduleRegistration) {
+    return 'UNREGISTERED';
+  }
+
+  return today ? 'UNKNOWN' : 'ABSENT';
 }
 
 /**
- * Compute all attendance fields (status, lateMinutes, workMinutes, otMinutes).
- * Phase 3: Now called for both existing records AND synthetic empty records (for ABSENT/LEAVE detection).
- * Priority per RULES.md §8.3: WEEKEND_OR_HOLIDAY > LEAVE > attendance-based statuses > ABSENT
- * 
- * Phase 2.1 (OT_REQUEST): Added otApproved parameter for OT approval-based calculation
- * 
- * @param {Object} attendance - { date, checkInAt, checkOutAt, otApproved, otMode, separatedOtMinutes }
- * @param {Set<string>} holidayDates - Set of "YYYY-MM-DD" holiday dates (optional)
- * @param {Set<string>} leaveDates - Set of "YYYY-MM-DD" approved leave dates (optional, Phase 3)
- * @returns {Object} { status, lateMinutes, workMinutes, otMinutes }
+ * Compute all attendance fields.
+ * Priority order (workday without attendance): LEAVE > UNREGISTERED > ABSENT > UNKNOWN(today/future)
+ *
+ * @param {Object} attendance
+ * @param {Set<string>} holidayDates
+ * @param {Set<string>} leaveDates
+ * @param {Object} options
+ * @returns {{status: string, lateMinutes: number, workMinutes: number, otMinutes: number}}
  */
-export function computeAttendance(attendance, holidayDates = new Set(), leaveDates = new Set()) {
-  // Fix A: Guard against null/undefined attendance to prevent destructuring crash
+export function computeAttendance(attendance, holidayDates = new Set(), leaveDates = new Set(), options = {}) {
   if (!attendance) {
     return { status: 'UNKNOWN', lateMinutes: 0, workMinutes: 0, otMinutes: 0 };
   }
@@ -96,24 +121,18 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
     separatedOtMinutes = 0
   } = attendance;
 
-  // Fix #2: Normalize date to "YYYY-MM-DD" format for consistent lookups
   const dateKey = normalizeDateKey(date);
-
-  // P1 Guard: Empty dateKey means invalid date input - fail safely
-  // Prevents isWeekend('')/isToday('') from returning wrong results
   if (!dateKey) {
     return { status: 'UNKNOWN', lateMinutes: 0, workMinutes: 0, otMinutes: 0 };
   }
 
-  // Fix #1: Normalize timestamps to Date objects for consistent comparisons
   const checkIn = normalizeTimestamp(checkInAt);
   const checkOut = normalizeTimestamp(checkOutAt);
+  const scheduleSnapshot = resolveAttendanceScheduleSnapshot(attendance);
+  const isFlexible = isFlexibleScheduleType(scheduleSnapshot.scheduleType);
 
-  // Priority 1: Weekend/Holiday - Compute metrics if attendance exists
-  // No check-in/check-out = normal holiday behavior
-  // Has check-in/check-out = Compute OT metrics (no "late" concept on weekends/holidays)
+  // Priority 1: Weekend/Holiday
   if (isWeekend(dateKey) || holidayDates.has(dateKey)) {
-    // No attendance = normal weekend/holiday
     if (!checkIn && !checkOut) {
       return {
         status: 'WEEKEND_OR_HOLIDAY',
@@ -123,42 +142,23 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
       };
     }
 
-    // Has check-in/check-out = Compute OT metrics
     let workMinutes = 0;
     let otMinutes = 0;
-
     if (checkIn && checkOut) {
-      // Weekend/holiday OT doesn't need approval (F1 requirement):
-      // all worked minutes are treated as OT minutes.
-      const weekendMinutes = computeWeekendOtMinutes(dateKey, checkIn, checkOut);
+      const weekendMinutes = computeWeekendOtMinutes(dateKey, checkIn, checkOut, scheduleSnapshot);
       workMinutes = weekendMinutes;
       otMinutes = weekendMinutes;
     }
-    // If checkIn but no checkOut (working now), keep 0 until checkout completes
 
     return {
       status: 'WEEKEND_OR_HOLIDAY',
-      lateMinutes: 0,  // Never late on weekend/holiday
+      lateMinutes: 0,
       workMinutes,
       otMinutes
     };
   }
 
-  // Priority 2: LEAVE (workdays only, no attendance record)
-  // If user has approved leave and no check-in/out, status = LEAVE
-  // If attendance exists on leave day, compute normally (override scenario)
-  if (leaveDates.has(dateKey) && !checkIn && !checkOut) {
-    return {
-      status: 'LEAVE',
-      lateMinutes: 0,
-      workMinutes: 0,
-      otMinutes: 0
-    };
-  }
-
-  const today = isToday(dateKey);
-
-  // Fix #7: Has checkOut but no checkIn → MISSING_CHECKIN (edge case: forgot to check in)
+  // Edge-case: checkout exists but missing checkin
   if (!checkIn && checkOut) {
     return {
       status: 'MISSING_CHECKIN',
@@ -168,30 +168,30 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
     };
   }
 
-  // Today + checked in + not checked out = WORKING (workday only, weekend/holiday handled above)
+  const today = isToday(dateKey);
+
+  // Today + checked in + not checked out
   if (today && checkIn && !checkOut) {
     return {
       status: 'WORKING',
-      lateMinutes: computeLateMinutes(dateKey, checkIn),
+      lateMinutes: isFlexible ? 0 : computeLateMinutes(dateKey, checkIn, scheduleSnapshot),
       workMinutes: 0,
       otMinutes: 0
     };
   }
 
-  // Past day + checked in + not checked out = MISSING_CHECKOUT
+  // Past + checked in + not checked out
   if (!today && checkIn && !checkOut) {
     return {
       status: 'MISSING_CHECKOUT',
-      lateMinutes: computeLateMinutes(dateKey, checkIn),
+      lateMinutes: isFlexible ? 0 : computeLateMinutes(dateKey, checkIn, scheduleSnapshot),
       workMinutes: 0,
       otMinutes: 0
     };
   }
 
-  // Both checkIn and checkOut exist
+  // Both check-in and check-out exist
   if (checkIn && checkOut) {
-    // P2 Fix (Issue #5): Guard against reversed times (bad data) to prevent misclassification
-    // If checkOut < checkIn, this is data corruption - return safe default instead of wrong status
     if (checkOut < checkIn) {
       return {
         status: 'UNKNOWN',
@@ -200,22 +200,37 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
         otMinutes: 0
       };
     }
-    
-    const lateMinutes = computeLateMinutes(dateKey, checkIn);
-    const workMinutes = computeWorkMinutes(dateKey, checkIn, checkOut, otApproved, otMode);
-    const otMinutes = computeOtMinutes(dateKey, checkOut, otApproved, otMode, separatedOtMinutes);
-    const isEarlyLeave = checkIsEarlyLeave(dateKey, checkOut);
 
-    // Priority: LATE_AND_EARLY (Purple) > LATE (Red) > EARLY_LEAVE (Yellow) > ON_TIME (Green)
-    // Per RULES.md v2.3 §3.3: LATE_AND_EARLY is highest severity
+    const lateMinutes = isFlexible ? 0 : computeLateMinutes(dateKey, checkIn, scheduleSnapshot);
+    const workMinutes = computeWorkMinutes(
+      dateKey,
+      checkIn,
+      checkOut,
+      otApproved,
+      otMode,
+      scheduleSnapshot
+    );
+    const otMinutes = isFlexible
+      ? 0
+      : computeOtMinutes(
+        dateKey,
+        checkOut,
+        otApproved,
+        otMode,
+        separatedOtMinutes,
+        scheduleSnapshot
+      );
+    const isEarlyLeave = isFlexible ? false : checkIsEarlyLeave(dateKey, checkOut, scheduleSnapshot);
+
     let status = 'ON_TIME';
-
-    if (lateMinutes > 0 && isEarlyLeave) {
-      status = 'LATE_AND_EARLY'; // Purple - NEW v2.3: both late AND early leave
-    } else if (lateMinutes > 0) {
-      status = 'LATE'; // Red - most severe single violation
-    } else if (isEarlyLeave) {
-      status = 'EARLY_LEAVE'; // Yellow - less severe
+    if (!isFlexible) {
+      if (lateMinutes > 0 && isEarlyLeave) {
+        status = 'LATE_AND_EARLY';
+      } else if (lateMinutes > 0) {
+        status = 'LATE';
+      } else if (isEarlyLeave) {
+        status = 'EARLY_LEAVE';
+      }
     }
 
     return {
@@ -226,19 +241,17 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
     };
   }
 
-  // P0 Fix: Past workday with no attendance and no leave = ABSENT
-  // This handles synthetic records for days that have passed
-  if (!today && !checkIn && !checkOut) {
+  // No check-in/out on workday
+  if (!checkIn && !checkOut) {
+    const status = computeNoAttendanceStatus(dateKey, leaveDates, options);
     return {
-      status: 'ABSENT',
+      status,
       lateMinutes: 0,
       workMinutes: 0,
       otMinutes: 0
     };
   }
 
-  // Fallback: Today with no attendance yet (normal state before check-in)
-  // Or unexpected data combinations
   return {
     status: 'UNKNOWN',
     lateMinutes: 0,
@@ -248,76 +261,92 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
 }
 
 /**
- * Calculate late minutes if check-in after 08:45 GMT+7.
- * Rule: ON_TIME if <= 08:45, LATE if >= 08:46
+ * Calculate late minutes based on schedule snapshot.
+ * Rule: late minutes counted from scheduled start minute, grace only for classification.
  */
-export function computeLateMinutes(dateKey, checkInAt) {
-  // P2 Fix (Bug #5): Guard against Invalid Date to prevent NaN/unpredictable comparison
+export function computeLateMinutes(dateKey, checkInAt, scheduleSnapshot = null) {
   if (!(checkInAt instanceof Date) || isNaN(checkInAt.getTime())) {
     return 0;
   }
-  
-  const lateThreshold = createTimeInGMT7(dateKey, 8, 45); // 08:45 GMT+7
 
-  if (checkInAt <= lateThreshold) {
+  const snapshot = scheduleSnapshot
+    ? resolveAttendanceScheduleSnapshot(scheduleSnapshot)
+    : resolveAttendanceScheduleSnapshot();
+
+  if (!snapshot.lateTrackingEnabled) {
     return 0;
   }
 
-  return getMinutesDiff(lateThreshold, checkInAt);
+  const lateThreshold = getLateThresholdForDate(dateKey, snapshot);
+  if (!lateThreshold || checkInAt <= lateThreshold) {
+    return 0;
+  }
+
+  const shiftStart = getShiftStartTimeForDate(dateKey, snapshot);
+  if (!shiftStart) {
+    return 0;
+  }
+
+  return Math.max(0, getMinutesDiff(shiftStart, checkInAt));
 }
 
 /**
- * Calculate work minutes from check-in to check-out, with lunch deduction.
- * Rule: Deduct 60 mins if checkIn < 12:00 AND checkOut > 13:00 (span lunch window)
- * Fix #3 & #4: Clamp to 0 to prevent negative minutes from bad data
- * 
- * Phase 2.1 (OT_REQUEST): Added otApproved parameter
- * - If otApproved = false: Cap checkout at 17:30 (STRICT rule A1)
- * - If otApproved = true: Use actual checkout time
- * 
- * @param {string} dateKey - Date in "YYYY-MM-DD" format
- * @param {Date} checkInAt - Check-in timestamp
- * @param {Date} checkOutAt - Check-out timestamp
- * @param {boolean} otApproved - Whether OT is approved (default: false)
- * @param {'CONTINUOUS'|'SEPARATED'} otMode - Approved OT mode
- * @returns {number} Work minutes (excluding lunch)
+ * Calculate work minutes with lunch deduction.
+ * Default behavior:
+ * - SEPARATED OT: cap base work at shift end
+ * - CONTINUOUS OT without approval: cap base work at shift end
+ * - CONTINUOUS OT with approval: no cap
+ *
+ * @param {string} dateKey
+ * @param {Date} checkInAt
+ * @param {Date} checkOutAt
+ * @param {boolean} otApproved
+ * @param {'CONTINUOUS'|'SEPARATED'} otMode
+ * @param {Object|null} scheduleSnapshot
+ * @param {{forceNoShiftCap?: boolean}} options
+ * @returns {number}
  */
-export function computeWorkMinutes(dateKey, checkInAt, checkOutAt, otApproved = false, otMode = 'CONTINUOUS') {
-  // P2 Fix (Bug #6): Guard against Invalid Date to prevent NaN in calculations
-  if (!(checkInAt instanceof Date) || isNaN(checkInAt.getTime()) ||
-      !(checkOutAt instanceof Date) || isNaN(checkOutAt.getTime())) {
+export function computeWorkMinutes(
+  dateKey,
+  checkInAt,
+  checkOutAt,
+  otApproved = false,
+  otMode = 'CONTINUOUS',
+  scheduleSnapshot = null,
+  options = {}
+) {
+  if (!(checkInAt instanceof Date) || isNaN(checkInAt.getTime())) {
     return 0;
   }
-  
-  // Fix #3: Guard against checkOut before checkIn (bad data)
+  if (!(checkOutAt instanceof Date) || isNaN(checkOutAt.getTime())) {
+    return 0;
+  }
   if (checkOutAt < checkInAt) {
     return 0;
   }
 
-  let effectiveCheckOut = checkOutAt;
-  
+  const snapshot = scheduleSnapshot
+    ? resolveAttendanceScheduleSnapshot(scheduleSnapshot)
+    : resolveAttendanceScheduleSnapshot();
   const normalizedMode = otMode === 'SEPARATED' ? 'SEPARATED' : 'CONTINUOUS';
 
-  // Separated OT always caps base shift at 17:30.
-  // Continuous OT keeps legacy behavior: cap only when otApproved is false.
-  if (normalizedMode === 'SEPARATED' || !otApproved) {
-    const endOfShift = createTimeInGMT7(dateKey, 17, 30);
-    if (checkOutAt > endOfShift) {
-      effectiveCheckOut = endOfShift;  // Cap at end of shift
-    }
+  let effectiveCheckOut = checkOutAt;
+  const shiftEnd = getShiftEndTimeForDate(dateKey, snapshot);
+  const shouldCapByShift = !options.forceNoShiftCap &&
+    Boolean(shiftEnd) &&
+    (normalizedMode === 'SEPARATED' || !otApproved);
+
+  if (shouldCapByShift && checkOutAt > shiftEnd) {
+    effectiveCheckOut = shiftEnd;
   }
 
-  // Calculate work minutes using effectiveCheckOut
   const totalMinutes = getMinutesDiff(checkInAt, effectiveCheckOut);
 
-  // Check if work interval spans lunch window (12:00-13:00 GMT+7)
   const lunchStart = createTimeInGMT7(dateKey, 12, 0);
   const lunchEnd = createTimeInGMT7(dateKey, 13, 0);
-
   const spansLunch = checkInAt < lunchStart && effectiveCheckOut > lunchEnd;
 
   if (spansLunch) {
-    // Fix #4: Clamp to 0 to prevent negative when totalMinutes < 60
     return Math.max(0, totalMinutes - 60);
   }
 
@@ -325,106 +354,106 @@ export function computeWorkMinutes(dateKey, checkInAt, checkOutAt, otApproved = 
 }
 
 /**
- * Calculate overtime minutes if check-out after 17:31 GMT+7.
- * Rule: OT = minutes after 17:31 if checkOutAt > 17:31
- * 
- * Phase 2.1 (OT_REQUEST): Added otApproved parameter
- * - If otApproved = false: Return 0 (STRICT rule - no approval = no OT)
- * - If otApproved = true: Calculate OT minutes after 17:31
- * 
- * @param {string} dateKey - Date in "YYYY-MM-DD" format
- * @param {Date} checkOutAt - Check-out timestamp
- * @param {boolean} otApproved - Whether OT is approved (default: false)
- * @param {'CONTINUOUS'|'SEPARATED'} otMode - Approved OT mode
- * @param {number|null} separatedOtMinutes - Snapshot minutes for separated OT
- * @returns {number} OT minutes after 17:31
+ * Calculate approved OT minutes.
  */
 export function computeOtMinutes(
   dateKey,
   checkOutAt,
   otApproved = false,
   otMode = 'CONTINUOUS',
-  separatedOtMinutes = 0
+  separatedOtMinutes = 0,
+  scheduleSnapshot = null
 ) {
-  // STRICT: Only calculate OT if approved
   if (!otApproved) {
     return 0;
   }
 
   if (otMode === 'SEPARATED') {
-    // checkOutAt is intentionally not used in separated mode:
-    // OT minutes come from approved snapshot stored on attendance.
     if (!Number.isFinite(Number(separatedOtMinutes))) {
       return 0;
     }
     return Math.max(0, Math.floor(Number(separatedOtMinutes)));
   }
-  
-  // P2 Fix (Bug #5): Guard against Invalid Date to prevent NaN/unpredictable comparison
+
   if (!(checkOutAt instanceof Date) || isNaN(checkOutAt.getTime())) {
     return 0;
   }
-  
-  const otThreshold = createTimeInGMT7(dateKey, 17, 31); // 17:31 GMT+7
 
-  if (checkOutAt <= otThreshold) {
+  const snapshot = scheduleSnapshot
+    ? resolveAttendanceScheduleSnapshot(scheduleSnapshot)
+    : resolveAttendanceScheduleSnapshot();
+
+  if (isFlexibleScheduleType(snapshot.scheduleType)) {
     return 0;
   }
 
-  return getMinutesDiff(otThreshold, checkOutAt);
+  const otThreshold = getOtThresholdTimeForDate(dateKey, snapshot.scheduleType);
+  if (!otThreshold || checkOutAt <= otThreshold) {
+    return 0;
+  }
+
+  return Math.max(0, getMinutesDiff(otThreshold, checkOutAt));
 }
 
 /**
- * Calculate OT minutes for weekend/holiday attendance.
- * Rule: Weekend/Holiday OT equals all worked minutes (including lunch rule).
- *
- * @param {string} dateKey - Date in "YYYY-MM-DD" format
- * @param {Date} checkInAt - Check-in timestamp
- * @param {Date} checkOutAt - Check-out timestamp
- * @returns {number} OT minutes on weekend/holiday
+ * Weekend/holiday OT equals all worked minutes.
  */
-export function computeWeekendOtMinutes(dateKey, checkInAt, checkOutAt) {
-  // Reuse computeWorkMinutes to keep lunch/guard logic in one place.
-  return computeWorkMinutes(dateKey, checkInAt, checkOutAt, true);
+export function computeWeekendOtMinutes(dateKey, checkInAt, checkOutAt, scheduleSnapshot = null) {
+  return computeWorkMinutes(
+    dateKey,
+    checkInAt,
+    checkOutAt,
+    true,
+    'CONTINUOUS',
+    scheduleSnapshot,
+    { forceNoShiftCap: true }
+  );
 }
 
 /**
- * Calculate potential OT minutes if user had approval.
- * Used for reporting unapproved OT (H2 requirement).
- * 
- * This function calculates what the OT would be regardless of approval status,
- * useful for tracking missed OT opportunities or showing users what they could have earned.
- * 
- * @param {string} dateKey - Date in "YYYY-MM-DD" format
- * @param {Date} checkOutAt - Check-out timestamp
- * @returns {number} Potential OT minutes after 17:31
+ * Compute potential OT (for unapproved OT reporting).
  */
-export function computePotentialOtMinutes(dateKey, checkOutAt) {
-  // P1 Fix (Issue #1): Guard against invalid Date input (report layer may pass null/string/Invalid Date)
+export function computePotentialOtMinutes(dateKey, checkOutAt, scheduleSnapshot = null) {
   if (!(checkOutAt instanceof Date) || isNaN(checkOutAt.getTime())) {
     return 0;
   }
-  
-  const otThreshold = createTimeInGMT7(dateKey, 17, 31);
-  
-  if (checkOutAt <= otThreshold) {
+
+  const snapshot = scheduleSnapshot
+    ? resolveAttendanceScheduleSnapshot(scheduleSnapshot)
+    : resolveAttendanceScheduleSnapshot();
+
+  if (isFlexibleScheduleType(snapshot.scheduleType)) {
     return 0;
   }
-  
-  return getMinutesDiff(otThreshold, checkOutAt);
+
+  const otThreshold = getOtThresholdTimeForDate(dateKey, snapshot.scheduleType);
+  if (!otThreshold || checkOutAt <= otThreshold) {
+    return 0;
+  }
+
+  return Math.max(0, getMinutesDiff(otThreshold, checkOutAt));
 }
 
 /**
- * Check if check-out is before 17:30 GMT+7 (early leave).
- * Rule: EARLY_LEAVE if checkOutAt < 17:30
+ * Check early leave based on schedule snapshot.
  */
-export function checkIsEarlyLeave(dateKey, checkOutAt) {
-  // P2 Fix (Issue #5): Guard against invalid Date to prevent silent misclassification
-  // (e.g., checkOut < checkIn from bad data, or Invalid Date objects)
+export function checkIsEarlyLeave(dateKey, checkOutAt, scheduleSnapshot = null) {
   if (!(checkOutAt instanceof Date) || isNaN(checkOutAt.getTime())) {
-    return false;  // Can't determine, assume not early leave (safe default)
+    return false;
   }
-  
-  const endOfShift = createTimeInGMT7(dateKey, 17, 30); // 17:30 GMT+7
+
+  const snapshot = scheduleSnapshot
+    ? resolveAttendanceScheduleSnapshot(scheduleSnapshot)
+    : resolveAttendanceScheduleSnapshot();
+
+  if (!snapshot.earlyLeaveTrackingEnabled) {
+    return false;
+  }
+
+  const endOfShift = getShiftEndTimeForDate(dateKey, snapshot);
+  if (!endOfShift) {
+    return false;
+  }
+
   return checkOutAt < endOfShift;
 }
