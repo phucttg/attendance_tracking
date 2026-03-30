@@ -772,4 +772,110 @@ describe('MyAttendancePage - Integration Tests', () => {
             expect(screen.queryByText(/31\/12/)).not.toBeInTheDocument();
         });
     });
+
+    describe('9. Duration toggle (minutes ↔ hours)', () => {
+        it('[ATT-DUR-01] toggles work minutes per-cell without affecting other cells', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+            client.get.mockImplementation((url) => {
+                if (url.startsWith('/attendance/me')) {
+                    return Promise.resolve({
+                        data: {
+                            items: [
+                                {
+                                    date: '2026-01-10',
+                                    checkInAt: '2026-01-10T02:20:00+07:00',
+                                    checkOutAt: '2026-01-10T19:21:00+07:00',
+                                    status: 'ON_TIME',
+                                    lateMinutes: 0,
+                                    workMinutes: 849,
+                                    otMinutes: 120,
+                                    scheduleType: 'SHIFT_1',
+                                },
+                            ],
+                        },
+                    });
+                }
+
+                if (url.startsWith('/requests/me')) {
+                    return Promise.resolve({
+                        data: {
+                            items: [],
+                            pagination: { page: 1, limit: 100, total: 0, totalPages: 1 },
+                        },
+                    });
+                }
+
+                return Promise.reject(new Error(`Unexpected GET: ${url}`));
+            });
+
+            render(
+                <MemoryRouter>
+                    <MyAttendancePage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.getByText('849 phút')).toBeInTheDocument();
+                expect(screen.getByText('120 phút')).toBeInTheDocument();
+            });
+
+            const workToggle = screen.getByRole('button', { name: 'Đổi đơn vị làm việc ngày 2026-01-10' });
+            await user.click(workToggle);
+
+            expect(screen.getByText('14h 9m')).toBeInTheDocument();
+            expect(screen.getByText('120 phút')).toBeInTheDocument();
+
+            await user.click(workToggle);
+            expect(screen.getByText('849 phút')).toBeInTheDocument();
+        });
+
+        it('[ATT-DUR-02] does not create toggle button for placeholder cells', async () => {
+            client.get.mockImplementation((url) => {
+                if (url.startsWith('/attendance/me')) {
+                    return Promise.resolve({
+                        data: {
+                            items: [
+                                {
+                                    date: '2026-01-12',
+                                    checkInAt: '2026-01-12T09:00:00+07:00',
+                                    checkOutAt: '2026-01-12T18:00:00+07:00',
+                                    status: 'ON_TIME',
+                                    lateMinutes: 0,
+                                    workMinutes: 0,
+                                    otMinutes: 0,
+                                    scheduleType: 'FLEXIBLE',
+                                },
+                            ],
+                        },
+                    });
+                }
+
+                if (url.startsWith('/requests/me')) {
+                    return Promise.resolve({
+                        data: {
+                            items: [],
+                            pagination: { page: 1, limit: 100, total: 0, totalPages: 1 },
+                        },
+                    });
+                }
+
+                return Promise.reject(new Error(`Unexpected GET: ${url}`));
+            });
+
+            render(
+                <MemoryRouter>
+                    <MyAttendancePage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.getAllByText('-').length).toBeGreaterThan(0);
+            });
+
+            expect(screen.queryByRole('button', { name: 'Đổi đơn vị đi muộn ngày 2026-01-12' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Đổi đơn vị làm việc ngày 2026-01-12' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Đổi đơn vị OT ngày 2026-01-12' })).not.toBeInTheDocument();
+        });
+    });
 });

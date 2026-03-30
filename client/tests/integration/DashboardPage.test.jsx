@@ -715,4 +715,71 @@ describe('DashboardPage - Integration Tests', () => {
             expect(hasPreviousMonthFetch).toBe(true);
         });
     });
+
+    describe('7. Duration toggle (minutes ↔ hours)', () => {
+        it('[DASH-DUR-01] toggles work minutes display on click', async () => {
+            const user = userEvent.setup();
+
+            client.get.mockResolvedValue({
+                data: {
+                    items: [{
+                        date: today,
+                        checkInAt: getTodayIsoAt(2, 20),
+                        checkOutAt: getTodayIsoAt(19, 21),
+                        lateMinutes: 0,
+                        workMinutes: 849,
+                        otMinutes: 0,
+                        scheduleType: 'SHIFT_1',
+                    }]
+                }
+            });
+
+            render(
+                <MemoryRouter>
+                    <DashboardPage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.getByText('849 phút')).toBeInTheDocument();
+            });
+
+            const workToggle = screen.getByRole('button', { name: 'Đổi đơn vị làm việc' });
+
+            await user.click(workToggle);
+            expect(screen.getByText('14h 9m')).toBeInTheDocument();
+
+            await user.click(workToggle);
+            expect(screen.getByText('849 phút')).toBeInTheDocument();
+        });
+
+        it('[DASH-DUR-02] FLEXIBLE late and OT remain placeholder (non-clickable)', async () => {
+            client.get.mockResolvedValue({
+                data: {
+                    items: [{
+                        date: today,
+                        checkInAt: getTodayIsoAt(9, 0),
+                        checkOutAt: getTodayIsoAt(18, 0),
+                        lateMinutes: 0,
+                        workMinutes: 540,
+                        otMinutes: 0,
+                        scheduleType: 'FLEXIBLE',
+                    }]
+                }
+            });
+
+            render(
+                <MemoryRouter>
+                    <DashboardPage />
+                </MemoryRouter>
+            );
+
+            await waitFor(() => {
+                expect(screen.getByText('540 phút')).toBeInTheDocument();
+            });
+
+            expect(screen.queryByRole('button', { name: 'Đổi đơn vị đi muộn' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Đổi đơn vị OT' })).not.toBeInTheDocument();
+        });
+    });
 });

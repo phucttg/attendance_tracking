@@ -32,6 +32,7 @@ import app from '../src/app.js';
 import User from '../src/models/User.js';
 import Attendance from '../src/models/Attendance.js';
 import AuditLog from '../src/models/AuditLog.js';
+import WorkScheduleRegistration from '../src/models/WorkScheduleRegistration.js';
 import { getDateKey } from '../src/utils/dateUtils.js';
 import { getCheckoutGraceMs } from '../src/utils/graceConfig.js';
 
@@ -49,6 +50,7 @@ beforeAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await AuditLog.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
 
     const passwordHash = await bcrypt.hash('password123', 10);
 
@@ -78,12 +80,19 @@ afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await AuditLog.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await mongoose.connection.close();
 });
 
 beforeEach(async () => {
     await Attendance.deleteMany({});
     await AuditLog.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({ userId: employeeId });
+    await WorkScheduleRegistration.create({
+        userId: employeeId,
+        workDate: getDateKey(new Date()),
+        scheduleType: 'SHIFT_1'
+    });
 });
 
 // ============================================================================
