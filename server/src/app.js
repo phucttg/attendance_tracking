@@ -8,6 +8,7 @@ import reportRoutes from './routes/reportRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import workScheduleRoutes from './routes/workScheduleRoutes.js';
 
 const app = express();
 
@@ -34,5 +35,6 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/work-schedules', workScheduleRoutes);
 
 export default app;

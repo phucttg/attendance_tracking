@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { ATTENDANCE_SCHEDULE_SOURCES, SCHEDULE_TYPES } from '../utils/schedulePolicy.js';
 
 export const ATTENDANCE_CLOSE_SOURCES = [
   'USER_CHECKOUT',
@@ -63,6 +64,36 @@ const attendanceSchema = new mongoose.Schema(
     separatedOtMinutes: {
       type: Number,
       default: null
+    },
+    scheduleType: {
+      type: String,
+      enum: SCHEDULE_TYPES,
+      default: 'SHIFT_1'
+    },
+    scheduledStartMinutes: {
+      type: Number,
+      default: 8 * 60
+    },
+    scheduledEndMinutes: {
+      type: Number,
+      default: 17 * 60 + 30
+    },
+    lateGraceMinutes: {
+      type: Number,
+      default: 5
+    },
+    lateTrackingEnabled: {
+      type: Boolean,
+      default: true
+    },
+    earlyLeaveTrackingEnabled: {
+      type: Boolean,
+      default: true
+    },
+    scheduleSource: {
+      type: String,
+      enum: ATTENDANCE_SCHEDULE_SOURCES,
+      default: 'LEGACY_BACKFILL'
     }
   },
   { timestamps: true }
