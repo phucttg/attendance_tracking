@@ -5,24 +5,28 @@ All dateKey calculations MUST use GMT+7.
 
 ## 0) Doc Priority (Conflict Resolution)
 If docs conflict, resolve in this order:
-1) RULES.md (this file) — logic truth
-2) API_SPEC.md — endpoint shapes/behavior
-3) DATA_DICTIONARY.md — DB fields/types/indexes
+1) [`schedule-based-late-policy.md`](/Users/truongphuc/Desktop/phuctruong_6jan/code_folder/docs/schedule-based-late-policy.md) — source of truth for workday late evaluation
+2) RULES.md (this file) — logic truth for status ownership, OT, holidays/weekends, leave, requests, and reconciliation
+3) API_SPEC.md — endpoint shapes/behavior
+4) DATA_DICTIONARY.md — DB fields/types/indexes
 
-## 1) Workday Configuration (MVP)
-- Work start: 08:30
-- Work end: 17:30
-- Grace: 15 minutes
-  - Late starts at 08:46
+## 1) Workday & Schedule Configuration (MVP)
+- Workday late evaluation is schedule-based, not globally fixed at 08:30.
+- Fixed shift definitions:
+  - `SHIFT_1`: start `08:00`, end `17:30`, grace `5` minutes, fixed-shift OT starts at `17:30`
+  - `SHIFT_2`: start `09:00`, end `18:30`, grace `5` minutes, fixed-shift OT starts at `18:30`
+  - `FLEXIBLE`: no fixed late threshold, no fixed early-leave threshold, no fixed-shift OT threshold on workdays
 - Lunch break: 60 minutes
-  - Deduct lunch if a work span crosses 12:00–13:00
-- OT starts after 17:31
+  - Deduct lunch if a work span crosses `12:00–13:00`
+- Weekend/holiday classification is resolved before workday late evaluation.
+- Weekend/holiday OT behavior remains owned by §10.6.
 
 ## 2) Attendance Record Rules
 - One attendance record per user per day:
   - Unique constraint: (userId + dateKey)
 - No "ABSENT attendance record":
   - If user is absent, there is typically NO attendance record for that day.
+- Attendance may store a schedule snapshot for schedule-aware late, early-leave, and OT calculations.
 
 Fields:
 - checkInAt: required once checked in
@@ -30,6 +34,12 @@ Fields:
 
 ## 3) Status Computation Rules (Core)
 Given a dateKey and optional attendance record:
+
+Ownership / precedence:
+- Calendar classification (`WEEKEND_OR_HOLIDAY`) wins before workday schedule-based late logic.
+- `LEAVE` and `UNREGISTERED` are attendance-state outputs handled in this file.
+- Workday late evaluation for valid schedules is defined in [`schedule-based-late-policy.md`](/Users/truongphuc/Desktop/phuctruong_6jan/code_folder/docs/schedule-based-late-policy.md).
+- OT ownership remains in §10 and must not be inferred from late rules.
 
 ### 3.1 Weekend/Holiday
 - If dateKey is weekend OR in holidays => status = WEEKEND_OR_HOLIDAY
@@ -39,28 +49,31 @@ Given a dateKey and optional attendance record:
 Let "todayKey" = current date in GMT+7.
 
 - If dateKey > todayKey (future):
-  - status = null (always)
-- If dateKey == todayKey (today):
-  - If no attendance record => status = null (NOT ABSENT)
-  - If checkInAt exists and checkOutAt is null => WORKING
-  - If checkInAt and checkOutAt exist:
-    - Determine late vs on time
-- If dateKey < todayKey (past):
-  - If no attendance record => ABSENT
-  - If checkInAt exists and checkOutAt is null => MISSING_CHECKOUT
-  - If checkInAt and checkOutAt exist:
-    - Determine late vs on time
+  - status = UNKNOWN / neutral by default
+- If no attendance record exists on a workday:
+  - If approved leave applies => LEAVE
+  - If schedule enforcement is active and there is no valid schedule registration => UNREGISTERED
+  - If dateKey == todayKey => UNKNOWN / neutral
+  - If dateKey < todayKey => ABSENT
+- If checkInAt exists and checkOutAt is null:
+  - Today => WORKING
+  - Past => MISSING_CHECKOUT
+- If checkInAt and checkOutAt exist:
+  - Determine late / on-time via the schedule-based late policy
+  - Determine early leave via the scheduled end for fixed shifts, when enabled
 
 ### 3.3 Late vs On-time vs Early Leave
-Applies ONLY when both checkInAt AND checkOutAt exist (day complete):
-- "On time" if checkInAt time <= 08:45 (GMT+7 local time)
-- "Late" if checkInAt time >= 08:46
-- "Early leave" if checkOutAt < 17:30 (GMT+7)
+Applies ONLY on workdays when both checkInAt AND checkOutAt exist (day complete):
+- `SHIFT_1` / `SHIFT_2`:
+  - Late / on-time boundaries come from [`schedule-based-late-policy.md`](/Users/truongphuc/Desktop/phuctruong_6jan/code_folder/docs/schedule-based-late-policy.md)
+  - Early leave uses the scheduled shift end from the attendance snapshot
+- `FLEXIBLE`:
+  - Does not produce `LATE` or `EARLY_LEAVE` in current implementation
 
 Status priority (current implementation):
 1. LATE_AND_EARLY (NEW v2.3: if late AND early leave) — highest severity
-2. LATE (if >= 08:46 but not early leave)
-3. EARLY_LEAVE (if on time but left early)
+2. LATE (if late but not early leave)
+3. EARLY_LEAVE (if not late but left early)
 4. ON_TIME (if on time and full day)
 
 ### 3.4 Missing Checkout
@@ -82,16 +95,25 @@ Status priority (current implementation):
 
 ## 4) Minutes Computation
 ### 4.1 lateMinutes
-If status is LATE or WORKING (late so far):
-- lateMinutes = max(0, checkInAt - 08:45)
+If late tracking is enabled for the effective schedule and `checkInAt` is after its schedule-specific grace threshold:
+- `lateMinutes = max(0, checkInAt - scheduled shift start)`
+- Grace only decides whether lateness applies; it is not subtracted from `lateMinutes`
+- Boundary examples from current tests:
+  - `SHIFT_1`: `08:05 => 0`, `08:06 => 6`
+  - `SHIFT_2`: `09:05 => 0`, `09:06 => 6`
 Else 0.
 
 ### 4.2 workMinutes
 If checkInAt exists:
 - If checkOutAt exists:
-  - raw = checkOutAt - checkInAt
-  - If span crosses 12:00–13:00 => deduct 60 minutes
-  - workMinutes = max(0, raw - lunchDeduct)
+  - On fixed-shift workdays (`SHIFT_1` / `SHIFT_2`):
+    - `workMinutes = overlap([checkInAt, checkOutAt), [scheduledShiftStart, scheduledShiftEnd))`
+    - If that regular-work overlap crosses `12:00–13:00` on the check-in date => deduct 60 minutes once
+    - Time before shift start is ignored
+    - Approved OT does not expand `workMinutes`
+  - On `FLEXIBLE` workdays and on weekend/holiday attendance:
+    - `workMinutes` uses the actual worked span
+    - If the worked span crosses `12:00–13:00` on the check-in date => deduct 60 minutes once
 - If checkOutAt is null:
   - workMinutes may be 0 or computed "so far" depending on UI needs
   - For MVP reports, prefer computed only when checkOutAt exists
@@ -99,11 +121,18 @@ Else 0.
 
 ### 4.3 otMinutes
 If checkOutAt exists:
-- If checkOutAt time > 17:31:
-  - otMinutes = minutes between 17:31 and checkOutAt (excluding lunch already handled in workMinutes if needed)
+- On workdays with fixed shifts and approved continuous OT:
+  - `otMinutes = minutes between the schedule-derived shift end and checkOutAt`
+  - `SHIFT_1` OT starts at `17:30`
+  - `SHIFT_2` OT starts at `18:30`
+  - Checkout exactly at shift end yields `0` OT minutes
+- On workdays with `FLEXIBLE`:
+  - current implementation does not compute fixed-shift OT minutes
+- Without OT approval on fixed-shift workdays:
+  - `otMinutes = 0`
 - **Exception (Weekend/Holiday):**
   - otMinutes = total work time (checkOut - checkIn, minus lunch deduction)
-  - No dependency on 17:31 threshold
+  - No dependency on fixed-shift OT thresholds
 Else 0.
 
 ## 5) Requests Adjustment Rules
@@ -218,8 +247,9 @@ On approve:
 - Configurable via env: `CHECKOUT_GRACE_HOURS` (default: 24)
 
 ### 9.3 OT Calculation
-- OT = minutes from 17:31 to checkOut (even if next day)
-- Example: 17:31 to 02:00 next day = 8.5 hours OT
+- For fixed-shift workdays, OT = minutes from the schedule-derived shift end to checkOut (even if next day)
+- Example using `SHIFT_1`: `17:30` to `02:00` next day = `8.5` hours OT
+- Example using `SHIFT_2`: `18:30` to `02:00` next day = `7.5` hours OT
 
 ### 9.4 Matrix Display
 - Attendance record belongs to check-in date
@@ -233,10 +263,13 @@ On approve:
   - Does NOT appear in `month=2026-02`
 
 ### 9.6 workMinutes / Lunch for Long Shifts
-- workMinutes = checkOutAt - checkInAt
-- Lunch: deduct 60 mins ONCE if shift spans 12:00–13:00 on check-in day
+- On fixed-shift workdays, `workMinutes` remains regular in-shift time only:
+  - `workMinutes = overlap([checkInAt, checkOutAt), [shiftStart, shiftEnd))`
+  - Lunch: deduct 60 mins ONCE only if that regular-work overlap crosses `12:00–13:00` on check-in day
+- Approved cross-midnight OT is tracked separately in `otMinutes`
+- Time before fixed-shift start is ignored on fixed-shift workdays
+- `FLEXIBLE` and weekend/holiday attendance keep actual-span work-minute behavior
 - No second lunch deduction for overnight shifts
-- No workMinutes cap (MVP): 20h shift => 1140 mins
 
 ---
 
@@ -245,14 +278,21 @@ On approve:
 ### 10.1 Overview
 **Core Change:** OT (overtime) is now **approval-based**, not automatic.
 
+On workdays, OT start times are derived from the effective fixed shift:
+- `SHIFT_1` => OT starts at `17:30`
+- `SHIFT_2` => OT starts at `18:30`
+- `FLEXIBLE` on workdays is not eligible for fixed-shift OT approval in current implementation
+
+Unless stated otherwise, examples below use `SHIFT_1`.
+
 **Old Behavior (v2.5):**
-- User checks out after 17:31 → OT automatically calculated
+- User checks out after the fixed-shift OT threshold → OT automatically calculated
 - No request/approval needed
 
 **New Behavior (v2.6):**
 - User must create `OT_REQUEST` BEFORE checkout
 - Manager/Admin approves → OT calculated
-- No approval → workMinutes capped at 17:30, OT = 0
+- No approval → workMinutes capped at the schedule-derived shift end, OT = 0
 
 ---
 
@@ -277,10 +317,16 @@ On approve:
    - Must be valid YYYY-MM-DD format
 
 2. **Time Validation:**
-   - `estimatedEndTime` must be on same calendar day (GMT+7) as `date`
-   - `estimatedEndTime` must be > 17:31 on that date
+   - For same-day fixed-shift OT, `estimatedEndTime` must not be before the schedule-derived shift end on that date
+     - `SHIFT_1` => at or after `17:30`
+     - `SHIFT_2` => at or after `18:30`
    - Minimum OT duration: 30 minutes (B1)
-     - Calculated as: `estimatedEndTime - 17:31 >= 30 minutes`
+     - Calculated from the same schedule-derived shift end
+     - Earliest valid same-day end:
+       - `SHIFT_1` => `18:00`
+       - `SHIFT_2` => `19:00`
+   - For separated OT on fixed shifts, `otStartTime` must be at or after the schedule-derived shift end
+   - On workdays, `FLEXIBLE` is not eligible for OT request creation in current implementation
 
 3. **State Validation:**
    - Cannot create if user already checked out for that date
@@ -317,14 +363,17 @@ On approve:
 
 **Example:**
 ```
-Shift: 2026-02-05 08:30 → 2026-02-06 02:00
+Example using SHIFT_1:
+Shift: 2026-02-05 08:00 → 2026-02-06 02:00
 
 Request:
 OT_REQUEST: date=2026-02-05, estimatedEndTime=2026-02-06T02:00:00+07:00
 
 Result:
 - Attendance (2/5): otApproved=true
-- OT duration calculated from 17:31 (2/5) to 02:00 (2/6)
+- OT duration calculated from 17:30 (2/5) to 02:00 (2/6)
+
+For `SHIFT_2`, the same cross-midnight calculation anchors from `18:30` on the check-in date.
 ```
 
 **Validation:**
@@ -428,22 +477,33 @@ PENDING → DELETED (employee cancels via DELETE /api/requests/:id)
 
 **Core Rule:** OT only calculated if `attendance.otApproved = true`
 
+On workdays with fixed shifts:
+- `workMinutes` is regular in-shift time only
+- Time before fixed-shift start is ignored
+- Approved OT minutes start from the schedule-derived shift end
+- `SHIFT_1` uses `08:00-17:30` for regular work and `17:30+` for approved OT
+- `SHIFT_2` uses `09:00-18:30` for regular work and `18:30+` for approved OT
+
+`FLEXIBLE` workdays do not receive fixed-shift OT minutes in current implementation.
+
 #### Scenario A: WITH OT Approval ✅
 ```
 date: 2026-02-05
+scheduleType: SHIFT_1
 checkInAt: 08:30
 checkOutAt: 20:00
 otApproved: true
 
 Calculation:
 - workMinutes = 08:30 to 17:30 = 480 minutes (minus lunch 60)
-- otMinutes = 17:31 to 20:00 = 149 minutes
-- Total working time = 480 + 149 = 629 minutes
+- otMinutes = 17:30 to 20:00 = 150 minutes
+- Total working time = 480 + 150 = 630 minutes
 ```
 
 #### Scenario B: WITHOUT OT Approval ❌
 ```
 date: 2026-02-05
+scheduleType: SHIFT_1
 checkInAt: 08:30
 checkOutAt: 20:00
 otApproved: false
@@ -455,19 +515,22 @@ Calculation:
 - Total working time = 480 minutes only
 ```
 
-**Implementation:**
+**Implementation outline:**
 ```javascript
-// In computeWorkMinutes()
-if (!otApproved) {
-  const endOfShift = createTimeInGMT7(dateKey, 17, 30);
-  effectiveCheckOut = min(checkOutAt, endOfShift);
-  // Work capped at 17:30
-}
+// In computeWorkMinutes() for fixed-shift workdays
+const regularStart = max(checkInAt, shiftStart);
+const regularEnd = min(checkOutAt, shiftEnd);
+workMinutes = overlap(regularStart, regularEnd) - lunchIfCrossed;
+
+// Pre-shift time is ignored, even when OT is approved.
 
 // In computeOtMinutes()
 if (!otApproved) {
-  return 0;  // No OT without approval
+  return 0;
 }
+
+const otThreshold = getOtThresholdTimeForDate(dateKey, scheduleSnapshot.scheduleType);
+return minutesBetween(otThreshold, checkOutAt);
 ```
 
 #### Scenario C: Weekend/Holiday ✅
@@ -480,11 +543,11 @@ otApproved: false (irrelevant for weekend/holiday)
 Calculation:
 - workMinutes = 08:30 to 11:00 = 150 minutes
 - otMinutes = 150 minutes (ALL work time = OT)
-- Weekend/holiday rule: No approval needed, no 17:31 threshold
+- Weekend/holiday rule: No approval needed, no fixed-shift OT start boundary
 ```
 
 **Key Points:**
-- A1 (STRICT): No grace period - về sau 17:30 phải có approval
+- A1 (STRICT): No grace period - after the schedule-derived shift end, fixed-shift OT requires approval
 - B2: Actual OT = calculated at checkout (not estimated time from request)
 - C1: Automatic calculation based on actual checkout time
 - F1 (Weekend/Holiday Exception): All work time = OT time
@@ -504,7 +567,7 @@ Calculation:
 ```javascript
 // Weekend/Holiday logic (updated v2.8)
 if (isWeekend(dateKey) || holidayDates.has(dateKey)) {
-  // ALL work time = OT time (no 17:31 threshold)
+  // ALL work time = OT time (no fixed-shift workday threshold)
   const totalWorkTime = computeWorkMinutes(dateKey, checkIn, checkOut, true);
   workMinutes = totalWorkTime;
   otMinutes = totalWorkTime;  // Same value: all work = OT
@@ -513,7 +576,7 @@ if (isWeekend(dateKey) || holidayDates.has(dateKey)) {
 ```
 
 **Key Change from v2.7:**
-- Weekend/holiday OT no longer uses 17:31 threshold
+- Weekend/holiday OT no longer uses a fixed-shift workday threshold
 - ALL work time = OT time (including morning/afternoon shifts)
 - Example: 08:00-11:00 Sunday = 180min work, 180min OT
 
@@ -585,7 +648,7 @@ if (approvedOtRequest) {
    - User checks in
    - No OT request exists
    - `otApproved` remains false
-   - Checkout capped at 17:30 ❌
+   - Checkout capped at the schedule-derived shift end ❌
 
 ---
 
@@ -597,7 +660,7 @@ Users now have 3 OT metrics:
 
 1. **totalOtMinutes:** All approved OT worked (paid OT)
 2. **approvedOtMinutes:** Same as total (for clarity)
-3. **unapprovedOtMinutes:** Time worked after 17:30 WITHOUT approval
+3. **unapprovedOtMinutes:** Time worked after the schedule-derived shift end WITHOUT approval
 
 **Calculation:**
 ```javascript
@@ -636,9 +699,10 @@ for (const record of records) {
 | Rule | Field | Validation | Error Message |
 |------|-------|------------|---------------|
 | E2 | date | >= todayKey | "Cannot create OT request for past dates" |
-| I1 | estimatedEndTime | same calendar day as date | "Cross-midnight OT requires separate requests" |
-| - | estimatedEndTime | > 17:31 | "OT must start after 17:31" |
-| B1 | estimatedEndTime | >= 17:31 + 30 mins | "Minimum OT duration is 30 minutes" |
+| I1 | estimatedEndTime | request date or immediate next day before 08:00 | "estimatedEndTime must be on request date or the immediate next day" |
+| - | estimatedEndTime | >= fixed-shift OT start (`17:30` / `18:30`) on same-day workday OT | "estimatedEndTime cannot be before shift end" |
+| B1 | estimatedEndTime | >= shift end + 30 mins for same-day continuous OT (`18:00` / `19:00`) | "Minimum OT duration is 30 minutes" |
+| - | scheduleType | `FLEXIBLE` blocked on workday | "Cannot create/approve OT for FLEXIBLE schedule on workday" |
 | E2 | checkout | must not exist | "Cannot request OT after checkout" |
 | D1 | quota | < 31 pending/month | "Maximum 31 pending OT requests per month" |
 
@@ -646,13 +710,13 @@ for (const record of records) {
 
 ### 10.11 Edge Cases & FAQs
 
-**Q: User works 17:30-18:30 without OT request. What happens?**
-- Work capped at 17:30
-- 17:30-18:30 time is LOST (not counted)
+**Q: Fixed-shift user works past scheduled shift end without OT request. What happens?**
+- Work capped at the scheduled shift end (`17:30` for `SHIFT_1`, `18:30` for `SHIFT_2`)
+- Post-shift time is LOST (not counted)
 - User should have requested OT beforehand
 
 **Q: OT request approved but user leaves at 18:00?**
-- OT calculated 17:31-18:00 = 29 minutes (less than minimum but still counted)
+- Example using `SHIFT_1`: OT calculated `17:30-18:00 = 30 minutes`
 - Request status remains APPROVED (no automatic update)
 
 **Q: Can request OT for next week?**
@@ -679,10 +743,12 @@ for (const record of records) {
 1. This section (§10) - OT Request Rules (v2.6)
 2. Section §4.3 - otMinutes computation (updated for otApproved)
 3. Section §9 - Cross-midnight OT (existing rules)
+4. [`schedule-based-late-policy.md`](/Users/truongphuc/Desktop/phuctruong_6jan/code_folder/docs/schedule-based-late-policy.md) for late boundaries only
 
 **In Case of Conflict:**
 - OT approval requirement (§10.5) OVERRIDES automatic calculation (§4.3)
-- Weekend/holiday exception (§10.6) takes precedence over approval requirement
+- Weekend/holiday exception (§10.6) takes precedence over approval requirement and fixed-shift OT thresholds
+- [`schedule-based-late-policy.md`](/Users/truongphuc/Desktop/phuctruong_6jan/code_folder/docs/schedule-based-late-policy.md) owns late evaluation only; it does not redefine OT or holiday behavior
 - Cross-midnight rules (§10.3) align with existing §9 structure
 
 ---

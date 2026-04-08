@@ -14,6 +14,12 @@ Build a simple internal attendance MVP for an SME. Beginner-friendly but correct
 ### 2) Attendance (Check-in / Check-out)
 - EMPLOYEE / MANAGER / ADMIN can check-in and check-out
 - 1 attendance record per user per day (unique userId + dateKey)
+- Workday late evaluation is based on the registered `scheduleType`, not a single global `08:30` rule
+- Supported schedule types:
+  - `SHIFT_1` and `SHIFT_2` use schedule-specific grace and late thresholds
+  - `FLEXIBLE` does not produce `lateMinutes`
+- When schedule enforcement is active, users must register a valid schedule before check-in
+  - Missing valid schedule may surface as `UNREGISTERED` and block check-in
 - Dashboard shows today's state:
   - Not checked-in yet
   - WORKING (checked-in, not checked-out)
@@ -147,16 +153,22 @@ Manager:
 - OT is now **approval-based**, not automatic (STRICT mode)
 - Employee creates `OT_REQUEST` before checkout
 - Manager/Admin approves → OT calculated on checkout
-- No approval → workMinutes capped at 17:30, otMinutes = 0
+- No approval → workMinutes capped at the schedule-derived shift end, otMinutes = 0
+- On fixed-shift workdays, OT thresholds are schedule-derived from the effective schedule
+  - `SHIFT_1` => OT starts at `17:30`
+  - `SHIFT_2` => OT starts at `18:30`
+- Weekend/holiday exception remains unchanged:
+  - all work time counts as OT
+  - no OT request is required for weekend/holiday OT
 
 #### OT Request Features
 - **OT_REQUEST type**: Third request type alongside ADJUST_TIME and LEAVE
-- **STRICT mode (A1)**: Without approval, work capped at 17:30, OT = 0
+- **STRICT mode (A1)**: Without approval, work is capped at the schedule-derived shift end and OT = 0
 - **No retroactive requests (E2)**: date >= today required
 - **Same-day time check**: estimatedEndTime must be in the future
 - **Auto-extend (D2)**: Updating existing PENDING request for same date
 - **Quota (D1)**: Max 31 pending OT requests per month per user
-- **Minimum duration (B1)**: OT must be ≥ 30 minutes (estimatedEndTime ≥ 18:01)
+- **Minimum duration (B1)**: OT must be ≥ 30 minutes beyond the schedule-derived OT threshold
 - **Weekend/holiday exception (F1)**: No OT_REQUEST needed for weekend/holiday OT
 - **Cross-midnight OT (I1)**: 1 request, allows next-day end time in 00:00-07:59 (GMT+7)
 - **Cancellation (C2)**: DELETE /api/requests/:id (owner, PENDING only, deletes record)

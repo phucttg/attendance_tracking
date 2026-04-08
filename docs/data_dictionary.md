@@ -5,6 +5,7 @@ v2.5 adds Today Activity pagination.
 v2.6 adds OT Request approval system (OT_REQUEST type), audit logging, and cross-midnight ADJUST_TIME support.
 v2.7 adds auto-close scheduler, FORGOT_CHECKOUT workflow, and attendance reconciliation fields.
 v2.8 Dashboard cross-midnight approved OT checkout UI (frontend-only, no schema changes).
+This docs alignment also records the schedule-aware attendance snapshot and work schedule registration collection already used by code.
 
 ## 1) users
 Purpose: accounts + roles + team assignment.
@@ -59,7 +60,7 @@ Fields:
 Indexes:
 - unique(date)
 
-## 4) attendances (UPDATED v2.7)
+## 4) attendances (UPDATED v2.8 docs alignment)
 Purpose: 1 user / 1 day attendance.
 
 Fields:
@@ -69,6 +70,13 @@ Fields:
 - checkInAt: Date [required once checked in]
 - checkOutAt: Date | null [optional]
 - otApproved: boolean [default false] (UPDATED v2.6 - set by approved OT_REQUEST)
+- scheduleType: enum ["SHIFT_1", "SHIFT_2", "FLEXIBLE"] [default "SHIFT_1"]
+- scheduledStartMinutes: Number [default 480 for legacy fallback]
+- scheduledEndMinutes: Number [default 1050 for legacy fallback]
+- lateGraceMinutes: Number [default 5]
+- lateTrackingEnabled: boolean [default true]
+- earlyLeaveTrackingEnabled: boolean [default true]
+- scheduleSource: enum ["REGISTERED", "LEGACY_BACKFILL"] [default "LEGACY_BACKFILL"]
 - closeSource: enum ["USER_CHECKOUT", "SYSTEM_AUTO_MIDNIGHT", "ADJUST_APPROVAL", "ADMIN_FORCE"] | null [optional] (NEW v2.7)
 - closedByRequestId: ObjectId -> requests._id | null [optional] (NEW v2.7 - links to FORGOT_CHECKOUT approval)
 - needsReconciliation: boolean [default false] (NEW v2.7 - flagged when auto-closed at midnight)
@@ -82,12 +90,21 @@ Constraints / Indexes:
 
 Notes:
 - Do NOT store fixed status in DB.
+- Schedule snapshot fields capture the effective schedule used for late, early-leave, and fixed-shift OT calculations on that attendance date.
 - Computed fields returned by API/report:
   - status
   - lateMinutes
-  - workMinutes (capped at 17:30 if otApproved=false, see rules.md §10.5)
-  - otMinutes (0 if otApproved=false, see rules.md §10.5)  - **Exception:** Weekend/holiday — otMinutes = workMinutes = total work time (F1 rule in rules.md §10.6, no approval needed)- otApproved=true: Set when manager approves OT_REQUEST, allows OT calculation beyond 17:30
-- otApproved=false: OT calculation returns 0 regardless of checkOutAt time (STRICT mode)
+  - workMinutes (capped at the schedule-derived shift end on fixed-shift workdays if otApproved=false, see rules.md §10.5)
+  - otMinutes (0 on fixed-shift workdays if otApproved=false, see rules.md §10.5)
+  - **Exception:** Weekend/holiday — `otMinutes = workMinutes = total work time` (F1 rule in rules.md §10.6, no approval needed)
+- `otApproved=true`: Set when manager approves OT_REQUEST, allows OT calculation beyond the schedule-derived OT threshold on fixed-shift workdays
+- `otApproved=false`: OT calculation returns `0` on fixed-shift workdays (STRICT mode)
+- `scheduleSource` values:
+  - `REGISTERED`: snapshot came from an explicit work schedule registration
+  - `LEGACY_BACKFILL`: snapshot was backfilled for compatibility
+- Legacy compatibility:
+  - current code may fall back to `SHIFT_1` when a legacy record has no explicit schedule snapshot
+  - this is a compatibility behavior, not the normative business rule for new workdays
 - closeSource tracking (NEW v2.7):
   - USER_CHECKOUT: Normal checkout by user
   - SYSTEM_AUTO_MIDNIGHT: Auto-closed by scheduler at midnight (see rules.md §11)
@@ -96,7 +113,28 @@ Notes:
 - needsReconciliation=true: Session was auto-closed, awaiting employee FORGOT_CHECKOUT request or admin action
 - closedByRequestId: Only set when closeSource=ADJUST_APPROVAL, creates audit trail
 
-## 5) requests (UPDATED v2.7)
+## 5) workScheduleRegistrations
+Purpose: per-user, per-day schedule registrations used for schedule enforcement and schedule-aware attendance behavior.
+
+Fields:
+- _id: ObjectId
+- userId: ObjectId -> users._id [required]
+- workDate: string "YYYY-MM-DD" (GMT+7) [required]
+- scheduleType: enum ["SHIFT_1", "SHIFT_2", "FLEXIBLE"] [required]
+- lockedAt: Date [default Date.now]
+- createdAt: Date
+- updatedAt: Date
+
+Indexes:
+- unique(userId + workDate)
+- index(workDate)
+
+Notes:
+- This collection is the normative source for new schedule registrations.
+- It is used by schedule enforcement, schedule-aware late evaluation, and fixed-shift OT validation.
+- When schedule enforcement is active, missing valid registration may surface as `UNREGISTERED` and block check-in flows.
+
+## 6) requests (UPDATED v2.7)
 Purpose: employee requests for attendance adjustment, leave, and OT approval.
 
 Fields:
@@ -143,8 +181,8 @@ Notes:
   - See rules.md §10 for complete OT Request rules
   - E1: OT_REQUEST cannot be retroactive (date >= today)
   - E2: Auto-extend feature prevents duplicate OT_REQUEST for same date
-  - I1: Cross-midnight OT requires 2 separate requests
-  - A1: STRICT mode - no grace period after 17:30
+  - I1: Cross-midnight OT uses 1 request anchored by the check-in date
+  - A1: STRICT mode - no grace period after the schedule-derived shift end
 - Leave requests use leaveStartDate/EndDate, ignore date field.
 - OT_REQUEST uses date field (single day), ignore leave fields.
 - Overlap check: query by (userId, status: APPROVED, type: LEAVE) and compare date ranges.
@@ -157,7 +195,7 @@ Notes:
   - FORGOT_CHECKOUT: Reconciliation for auto-closed session
   - Pre-validate hook enforces: if FORGOT_CHECKOUT, targetAttendanceId is required
 
-## 6) auditLogs (NEW v2.6)
+## 7) auditLogs (NEW v2.6)
 Purpose: track attendance anomalies for admin review.
 
 Fields:
