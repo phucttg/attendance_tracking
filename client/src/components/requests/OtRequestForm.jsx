@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
     Label,
     TextInput,
@@ -11,6 +11,7 @@ import {
 } from 'flowbite-react';
 import { HiPlus } from 'react-icons/hi';
 import { createRequest } from '../../api/requestApi';
+import { getMyWorkSchedules } from '../../api/memberApi';
 import {
     addDaysToDate,
     buildIsoTimestamp,
@@ -20,9 +21,23 @@ import {
 const OT_CROSS_MIDNIGHT_CUTOFF = '08:00';
 const OT_MODE_CONTINUOUS = 'CONTINUOUS';
 const OT_MODE_SEPARATED = 'SEPARATED';
+const FIXED_SHIFT_OT_POLICIES = {
+    SHIFT_1: {
+        label: 'Ca 1',
+        threshold: '17:30',
+        earliestEnd: '18:00',
+    },
+    SHIFT_2: {
+        label: 'Ca 2',
+        threshold: '18:30',
+        earliestEnd: '19:00',
+    },
+};
 
 const isCrossMidnightOt = (timeValue) =>
     Boolean(timeValue) && timeValue < OT_CROSS_MIDNIGHT_CUTOFF;
+
+const getFixedShiftPolicy = (scheduleType) => FIXED_SHIFT_OT_POLICIES[scheduleType] ?? null;
 
 const resolveOtDate = (date, timeValue) => {
     if (!date || !timeValue) return null;
@@ -60,10 +75,40 @@ export default function OtRequestForm({
 
     const [submitting, setSubmitting] = useState(false);
     const [showOtConfirmModal, setShowOtConfirmModal] = useState(false);
-    const [estimatedOtMinutes, setEstimatedOtMinutes] = useState(0);
+    const [estimatedOtMinutes, setEstimatedOtMinutes] = useState(null);
     const [modalError, setModalError] = useState('');
+    const [scheduleItemsByDate, setScheduleItemsByDate] = useState({});
 
     const otMode = formData.otMode || OT_MODE_CONTINUOUS;
+    const selectedScheduleItem = formData.date ? scheduleItemsByDate[formData.date] || null : null;
+    const selectedFixedShiftPolicy = getFixedShiftPolicy(selectedScheduleItem?.scheduleType);
+
+    useEffect(() => {
+        let active = true;
+
+        getMyWorkSchedules()
+            .then(({ data }) => {
+                if (!active) return;
+
+                const nextItemsByDate = {};
+                const items = Array.isArray(data?.items) ? data.items : [];
+                items.forEach((item) => {
+                    if (item?.workDate) {
+                        nextItemsByDate[item.workDate] = item;
+                    }
+                });
+                setScheduleItemsByDate(nextItemsByDate);
+            })
+            .catch(() => {
+                if (active) {
+                    setScheduleItemsByDate({});
+                }
+            });
+
+        return () => {
+            active = false;
+        };
+    }, []);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -110,12 +155,16 @@ export default function OtRequestForm({
             };
         }
 
-        const start = parseVnDateTime(date, '17:31');
+        if (!selectedFixedShiftPolicy) {
+            return { start: null, end, minutes: null, endDate, startDate: date };
+        }
+
+        const start = parseVnDateTime(date, selectedFixedShiftPolicy.threshold);
         const minutes = Math.floor((end - start) / 60000);
         return {
             start,
             end,
-            minutes: Number.isFinite(minutes) ? minutes : 0,
+            minutes: Number.isFinite(minutes) ? minutes : null,
             endDate,
             startDate: date,
         };
@@ -150,21 +199,39 @@ export default function OtRequestForm({
             };
         }
 
+        if (selectedScheduleItem?.scheduleType === 'FLEXIBLE' && selectedScheduleItem?.isWorkday) {
+            return {
+                valid: false,
+                error: 'Lịch Linh hoạt trong ngày làm việc hiện không hỗ trợ đăng ký OT',
+            };
+        }
+
         if (otMode === OT_MODE_CONTINUOUS) {
-            if (!isCrossMidnightOt(estimatedEndTime) && estimatedEndTime <= '17:31') {
-                return { valid: false, error: 'OT liên tục phải kết thúc sau 17:31 (GMT+7)' };
+            if (
+                selectedFixedShiftPolicy &&
+                !isCrossMidnightOt(estimatedEndTime) &&
+                estimatedEndTime < selectedFixedShiftPolicy.threshold
+            ) {
+                return {
+                    valid: false,
+                    error: `OT liên tục không thể kết thúc trước ${selectedFixedShiftPolicy.threshold} (GMT+7)`,
+                };
             }
 
-            const continuousStart = parseVnDateTime(date, '17:31');
-            const minutes = Math.floor((endTime - continuousStart) / 60000);
-            if (minutes < 30) {
+            const continuousStart = selectedFixedShiftPolicy
+                ? parseVnDateTime(date, selectedFixedShiftPolicy.threshold)
+                : null;
+            const minutes = continuousStart
+                ? Math.floor((endTime - continuousStart) / 60000)
+                : null;
+            if (Number.isFinite(minutes) && minutes < 30) {
                 return { valid: false, error: 'Thời gian OT tối thiểu là 30 phút' };
             }
 
             return {
                 valid: true,
                 error: '',
-                otMinutes: minutes,
+                otMinutes: Number.isFinite(minutes) ? minutes : null,
                 endOffsetDays: isCrossMidnightOt(estimatedEndTime) ? 1 : 0,
                 otStartOffsetDays: 0,
             };
@@ -185,9 +252,14 @@ export default function OtRequestForm({
             return { valid: false, error: 'Giờ bắt đầu OT không hợp lệ' };
         }
 
-        const threshold = parseVnDateTime(date, '17:31');
-        if (startTime <= threshold) {
-            return { valid: false, error: 'Giờ bắt đầu OT tách rời phải sau 17:31 (GMT+7)' };
+        const threshold = selectedFixedShiftPolicy
+            ? parseVnDateTime(date, selectedFixedShiftPolicy.threshold)
+            : null;
+        if (threshold && startTime < threshold) {
+            return {
+                valid: false,
+                error: `Giờ bắt đầu OT tách rời phải từ ${selectedFixedShiftPolicy.threshold} (GMT+7)`,
+            };
         }
 
         if (endTime <= startTime) {
@@ -230,7 +302,7 @@ export default function OtRequestForm({
             return;
         }
 
-        setEstimatedOtMinutes(validation.otMinutes);
+        setEstimatedOtMinutes(validation.otMinutes ?? null);
         setShowOtConfirmModal(true);
     };
 
@@ -282,6 +354,17 @@ export default function OtRequestForm({
     const isCrossDayOt = isCrossMidnightOt(formData.estimatedEndTime);
     const nextDayDisplay = isCrossDayOt && formData.date ? getNextDayDisplay(formData.date) : '';
     const isSeparated = otMode === OT_MODE_SEPARATED;
+    const scheduleHelperText = (() => {
+        if (selectedFixedShiftPolicy) {
+            return `${selectedFixedShiftPolicy.label}: OT bắt đầu từ ${selectedFixedShiftPolicy.threshold}, tối thiểu cùng ngày đến ${selectedFixedShiftPolicy.earliestEnd}.`;
+        }
+
+        if (selectedScheduleItem?.scheduleType === 'FLEXIBLE' && selectedScheduleItem?.isWorkday) {
+            return 'Lịch Linh hoạt trong ngày làm việc hiện không hỗ trợ OT cố định.';
+        }
+
+        return 'Hệ thống sẽ đối chiếu theo ca đã đăng ký của ngày này khi tạo yêu cầu.';
+    })();
 
     return (
         <>
@@ -319,12 +402,13 @@ export default function OtRequestForm({
                             min={today}
                             required
                         />
-                        <p className="text-xs text-gray-600 mt-1">
-                            {isSeparated
-                                ? 'OT tách rời chỉ hỗ trợ ngày hiện tại (GMT+7), sau khi đã check-in và check-out ca chính'
-                                : 'OT liên tục hỗ trợ ngày hiện tại hoặc tương lai'}
-                        </p>
-                    </div>
+                            <p className="text-xs text-gray-600 mt-1">
+                                {isSeparated
+                                    ? 'OT tách rời chỉ hỗ trợ ngày hiện tại (GMT+7), sau khi đã check-in và check-out ca chính'
+                                    : 'OT liên tục hỗ trợ ngày hiện tại hoặc tương lai'}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1">{scheduleHelperText}</p>
+                        </div>
 
                     {isSeparated && (
                         <div>
@@ -338,7 +422,11 @@ export default function OtRequestForm({
                                 required={isSeparated}
                             />
                             <div className="text-xs text-gray-600 mt-1 space-y-1">
-                                <p>Giờ bắt đầu phải sau 17:31 (GMT+7)</p>
+                                <p>
+                                    {selectedFixedShiftPolicy
+                                        ? `Giờ bắt đầu phải từ ${selectedFixedShiftPolicy.threshold} (GMT+7)`
+                                        : 'Giờ bắt đầu sẽ được kiểm tra theo ca đã đăng ký'}
+                                </p>
                                 <p>Giờ 00:00-07:59 sẽ được tính là ngày hôm sau</p>
                             </div>
                         </div>
@@ -355,7 +443,13 @@ export default function OtRequestForm({
                             required
                         />
                         <div className="text-xs text-gray-600 mt-1 space-y-1">
-                            {!isSeparated && <p>OT liên tục cùng ngày phải kết thúc sau 17:31</p>}
+                            {!isSeparated && (
+                                <p>
+                                    {selectedFixedShiftPolicy
+                                        ? `OT liên tục cùng ngày tối thiểu đến ${selectedFixedShiftPolicy.earliestEnd}`
+                                        : 'OT liên tục cùng ngày sẽ được đối chiếu theo ca đã đăng ký'}
+                                </p>
+                            )}
                             <p>Giờ 00:00-07:59 sẽ được tính là ngày hôm sau</p>
                             <p>Tối thiểu 30 phút</p>
                         </div>
@@ -366,7 +460,7 @@ export default function OtRequestForm({
                         )}
                     </div>
 
-                    {formData.date && formData.estimatedEndTime && preview.minutes > 0 && (
+                    {formData.date && formData.estimatedEndTime && Number.isFinite(preview.minutes) && preview.minutes > 0 && (
                         <Alert color={preview.minutes >= 30 ? 'success' : 'warning'}>
                             <div className="flex items-center">
                                 <span className="font-semibold mr-2">Thời gian OT dự kiến:</span>
@@ -404,7 +498,7 @@ export default function OtRequestForm({
                                 ) : (
                                     <>
                                         <li>Phải có approval từ manager trước khi checkout</li>
-                                        <li>Nếu không có approval: giờ làm tính đến 17:30, OT = 0</li>
+                                        <li>Nếu không có approval: giờ làm chỉ tính trong khung ca đã đăng ký, OT = 0</li>
                                     </>
                                 )}
                             </ul>
@@ -475,7 +569,9 @@ export default function OtRequestForm({
                                 <div className="flex justify-between bg-green-50 rounded p-2">
                                     <span className="text-gray-600">Thời gian OT:</span>
                                     <span className="font-bold text-green-600">
-                                        {formatMinutes(estimatedOtMinutes)}
+                                        {Number.isFinite(estimatedOtMinutes)
+                                            ? formatMinutes(estimatedOtMinutes)
+                                            : 'Sẽ được xác định theo ca đã đăng ký'}
                                     </span>
                                 </div>
 
