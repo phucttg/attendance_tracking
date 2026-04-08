@@ -509,11 +509,11 @@ async function approveRequestCore(requestId, approver, session) {
       || getOtThresholdTimeForDate(existingRequest.date, 'SHIFT_1');
     const thresholdMinutes = getOtThresholdMinutes(effectiveScheduleType)
       ?? getOtThresholdMinutes('SHIFT_1')
-      ?? (17 * 60 + 31);
-    const thresholdLabel = formatMinutesAsTime(thresholdMinutes) || '17:31';
+      ?? (17 * 60 + 30);
+    const thresholdLabel = formatMinutesAsTime(thresholdMinutes) || '17:30';
     const earliestContinuousEndMinutes = getEarliestContinuousOtEndMinutes(effectiveScheduleType, 30)
-      ?? (18 * 60 + 1);
-    const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:01';
+      ?? (18 * 60);
+    const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:00';
 
     if (otMode === 'CONTINUOUS') {
       const estimatedEndTime = existingRequest.estimatedEndTime
@@ -534,8 +534,8 @@ async function approveRequestCore(requestId, approver, session) {
       const endDateKey = getDateKey(estimatedEndTime);
       const isCrossMidnight = endDateKey === nextDateKey;
 
-      if (!isCrossMidnight && thresholdTime && estimatedEndTime <= thresholdTime) {
-        const error = new Error(`Cannot approve OT: estimatedEndTime must be after ${thresholdLabel} (GMT+7)`);
+      if (!isCrossMidnight && thresholdTime && estimatedEndTime < thresholdTime) {
+        const error = new Error(`Cannot approve OT: estimatedEndTime cannot be before ${thresholdLabel} (GMT+7)`);
         error.statusCode = 400;
         throw error;
       }
@@ -585,8 +585,8 @@ async function approveRequestCore(requestId, approver, session) {
         throw error;
       }
 
-      if (!thresholdTime || otStartTime <= thresholdTime) {
-        const error = new Error(`Cannot approve separated OT: otStartTime must be after ${thresholdLabel} (GMT+7)`);
+      if (!thresholdTime || otStartTime < thresholdTime) {
+        const error = new Error(`Cannot approve separated OT: otStartTime must be at or after ${thresholdLabel} (GMT+7)`);
         error.statusCode = 400;
         throw error;
       }

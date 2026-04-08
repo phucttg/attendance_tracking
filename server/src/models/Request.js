@@ -6,8 +6,6 @@ const BUSINESS_TZ_OFFSET_HOURS = 7;
 const BUSINESS_TZ_OFFSET_MS = BUSINESS_TZ_OFFSET_HOURS * 60 * 60 * 1000;
 
 // OT business rules (see docs/rules.md §10)
-const OT_START_TIME_HOURS = 17;  // 17:31 in 24h format
-const OT_START_TIME_MINUTES = 31;
 const OT_MIN_DURATION_MINUTES = 30;  // Minimum OT duration (B1 requirement)
 const OT_CROSS_MIDNIGHT_CUTOFF_HOURS = 8;  // 08:00 boundary (exclusive)
 const OT_CROSS_MIDNIGHT_CUTOFF_MINUTES = 0;
@@ -325,8 +323,6 @@ requestSchema.pre('validate', function() {
     }
 
     const nextDateKey = getNextDateKey(this.date);
-    const thresholdMinutes = OT_START_TIME_HOURS * 60 + OT_START_TIME_MINUTES;
-    const minContinuousEndMinutes = thresholdMinutes + OT_MIN_DURATION_MINUTES;
     const crossMidnightCutoffMinutes =
       OT_CROSS_MIDNIGHT_CUTOFF_HOURS * 60 + OT_CROSS_MIDNIGHT_CUTOFF_MINUTES;
 
@@ -353,14 +349,6 @@ requestSchema.pre('validate', function() {
 
     if (this.otMode === 'CONTINUOUS') {
       this.otStartTime = null;
-
-      if (!estimatedIsNextDay && estimatedTime.totalMinutes < minContinuousEndMinutes) {
-        this.invalidate(
-          'estimatedEndTime',
-          `OT must end at least ${OT_MIN_DURATION_MINUTES} minutes after ${OT_START_TIME_HOURS}:${OT_START_TIME_MINUTES.toString().padStart(2, '0')} ` +
-          `(minimum end time: ${Math.floor(minContinuousEndMinutes / 60)}:${(minContinuousEndMinutes % 60).toString().padStart(2, '0')})`
-        );
-      }
       return;
     }
 
@@ -393,21 +381,6 @@ requestSchema.pre('validate', function() {
         'otStartTime',
         'Cross-midnight OT start time must be before 08:00 (GMT+7)'
       );
-      return;
-    }
-
-    const otThreshold = new Date(Date.UTC(
-      Number(this.date.slice(0, 4)),
-      Number(this.date.slice(5, 7)) - 1,
-      Number(this.date.slice(8, 10)),
-      OT_START_TIME_HOURS - BUSINESS_TZ_OFFSET_HOURS,
-      OT_START_TIME_MINUTES,
-      0,
-      0
-    ));
-
-    if (this.otStartTime <= otThreshold) {
-      this.invalidate('otStartTime', 'otStartTime must be after 17:31 (GMT+7)');
       return;
     }
 

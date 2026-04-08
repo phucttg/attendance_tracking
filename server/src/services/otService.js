@@ -206,10 +206,10 @@ export const createOtRequest = async (userId, requestData) => {
     || getOtThresholdTimeForDate(date, 'SHIFT_1');
   const thresholdMinutes = getOtThresholdMinutes(effectiveScheduleType)
     ?? getOtThresholdMinutes('SHIFT_1')
-    ?? (17 * 60 + 31);
-  const thresholdLabel = formatMinutesAsTime(thresholdMinutes) || '17:31';
-  const earliestContinuousEndMinutes = getEarliestContinuousOtEndMinutes(effectiveScheduleType, 30) ?? (18 * 60 + 1);
-  const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:01';
+    ?? (17 * 60 + 30);
+  const thresholdLabel = formatMinutesAsTime(thresholdMinutes) || '17:30';
+  const earliestContinuousEndMinutes = getEarliestContinuousOtEndMinutes(effectiveScheduleType, 30) ?? (18 * 60);
+  const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:00';
   const isWorkday = await isWorkdayDate(date);
 
   if (isWorkday && isFlexibleScheduleType(effectiveScheduleType)) {
@@ -219,9 +219,9 @@ export const createOtRequest = async (userId, requestData) => {
   }
 
   if (otMode === 'CONTINUOUS') {
-    // Validation 3: same-day end time must be > shift OT threshold
-    if (!isCrossMidnight && (!thresholdTime || endTime <= thresholdTime)) {
-      const error = new Error(`OT must start after ${thresholdLabel}. Please adjust your estimated end time.`);
+    // Validation 3: same-day end time must not be before shift end
+    if (!isCrossMidnight && (!thresholdTime || endTime < thresholdTime)) {
+      const error = new Error(`OT cannot end before ${thresholdLabel}. Please adjust your estimated end time.`);
       error.statusCode = 400;
       throw error;
     }
@@ -269,8 +269,8 @@ export const createOtRequest = async (userId, requestData) => {
       }
     }
 
-    if (!thresholdTime || startTime <= thresholdTime) {
-      const error = new Error(`otStartTime must be after ${thresholdLabel} (GMT+7)`);
+    if (!thresholdTime || startTime < thresholdTime) {
+      const error = new Error(`otStartTime must be at or after ${thresholdLabel} (GMT+7)`);
       error.statusCode = 400;
       throw error;
     }
