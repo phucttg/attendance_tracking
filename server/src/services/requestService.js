@@ -230,10 +230,13 @@ const attachOtPreview = (requestDoc) => {
   return requestDoc;
 };
 
-const resolveEffectiveOtScheduleType = async (userId, dateKey, attendance, session) => {
+const resolveEffectiveOtScheduleContext = async (userId, dateKey, attendance, session) => {
   const attendanceType = normalizeScheduleType(attendance?.scheduleType);
   if (attendanceType) {
-    return attendanceType;
+    return {
+      effectiveScheduleType: attendanceType,
+      hasRealSchedule: true
+    };
   }
 
   const query = WorkScheduleRegistration.findOne({
@@ -243,7 +246,10 @@ const resolveEffectiveOtScheduleType = async (userId, dateKey, attendance, sessi
   const registration = session ? await query.session(session).lean() : await query.lean();
 
   const registrationType = normalizeScheduleType(registration?.scheduleType);
-  return registrationType || 'SHIFT_1';
+  return {
+    effectiveScheduleType: registrationType || 'SHIFT_1',
+    hasRealSchedule: Boolean(registrationType)
+  };
 };
 
 const isWorkdayForDate = async (dateKey) => {
@@ -492,7 +498,7 @@ async function approveRequestCore(requestId, approver, session) {
       'lateGraceMinutes lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
     ).lean();
     const attendance = session ? await attendanceQuery.session(session) : await attendanceQuery;
-    const effectiveScheduleType = await resolveEffectiveOtScheduleType(
+    const { effectiveScheduleType, hasRealSchedule } = await resolveEffectiveOtScheduleContext(
       existingRequest.userId._id,
       existingRequest.date,
       attendance,
@@ -516,6 +522,12 @@ async function approveRequestCore(requestId, approver, session) {
     const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:00';
 
     if (otMode === 'CONTINUOUS') {
+      if (isWorkday && !hasRealSchedule) {
+        const error = new Error('Cannot approve OT: employee must register work schedule before OT approval');
+        error.statusCode = 400;
+        throw error;
+      }
+
       const estimatedEndTime = existingRequest.estimatedEndTime
         ? new Date(existingRequest.estimatedEndTime)
         : null;

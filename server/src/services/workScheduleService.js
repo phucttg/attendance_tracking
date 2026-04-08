@@ -115,21 +115,32 @@ function buildItem({
   };
 }
 
+const getRequestWorkDate = (request) => request?.date || request?.checkInDate || null;
+
+const hasRealScheduleForDate = (workDate, registrationMap, attendanceScheduleTypeMap) => {
+  if (!workDate) {
+    return false;
+  }
+
+  const registeredScheduleType = normalizeScheduleType(registrationMap.get(workDate)?.scheduleType);
+  const attendanceScheduleType = attendanceScheduleTypeMap.get(workDate) || null;
+  return Boolean(registeredScheduleType || attendanceScheduleType);
+};
+
 async function getWindowContext(userId) {
   const window = getNormalizedScheduleWindow();
   const holidaySet = await getHolidaySetForDates(window.dates);
 
-  const [registrations, checkedInAttendances, otRequests] = await Promise.all([
+  const [registrations, attendances, otRequests] = await Promise.all([
     WorkScheduleRegistration.find({
       userId,
       workDate: { $gte: window.windowStart, $lte: window.windowEnd }
     }).lean(),
     Attendance.find({
       userId,
-      date: { $in: window.dates },
-      checkInAt: { $ne: null }
+      date: { $in: window.dates }
     })
-      .select('date')
+      .select('date checkInAt scheduleType')
       .lean(),
     Request.find({
       userId,
@@ -140,19 +151,42 @@ async function getWindowContext(userId) {
         { checkInDate: { $gte: window.windowStart, $lte: window.windowEnd } }
       ]
     })
-      .select('date checkInDate')
+      .select('date checkInDate otMode')
       .lean()
   ]);
 
   const registrationMap = new Map(registrations.map((doc) => [doc.workDate, doc]));
-  const checkedInDateSet = new Set(checkedInAttendances.map((doc) => doc.date).filter(Boolean));
+  const checkedInDateSet = new Set(
+    attendances
+      .filter((doc) => Boolean(doc?.checkInAt) && Boolean(doc?.date))
+      .map((doc) => doc.date)
+  );
+  const attendanceScheduleTypeMap = new Map(
+    attendances
+      .map((doc) => [doc.date, normalizeScheduleType(doc?.scheduleType)])
+      .filter(([workDate, scheduleType]) => Boolean(workDate) && Boolean(scheduleType))
+  );
   const otLockedDateSet = new Set();
   for (const request of otRequests) {
-    if (request?.date && window.dates.includes(request.date)) {
-      otLockedDateSet.add(request.date);
-    } else if (request?.checkInDate && window.dates.includes(request.checkInDate)) {
-      otLockedDateSet.add(request.checkInDate);
+    const workDate = getRequestWorkDate(request);
+    if (!workDate || !window.dates.includes(workDate)) {
+      continue;
     }
+
+    const otMode = request?.otMode === 'SEPARATED' ? 'SEPARATED' : 'CONTINUOUS';
+    if (otMode === 'CONTINUOUS') {
+      const hasRealSchedule = hasRealScheduleForDate(
+        workDate,
+        registrationMap,
+        attendanceScheduleTypeMap
+      );
+      const hasCheckedIn = checkedInDateSet.has(workDate);
+      if (!hasRealSchedule && !hasCheckedIn) {
+        continue;
+      }
+    }
+
+    otLockedDateSet.add(workDate);
   }
 
   return {
