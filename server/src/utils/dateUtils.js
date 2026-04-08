@@ -54,7 +54,7 @@ export function isWeekend(dateKey) {
 
 /**
  * Get hour and minute components of a Date in GMT+7.
- * Used for: late check (08:45), early leave (17:30), OT (17:31), lunch (12:00-13:00).
+ * Used for: late check, early leave, fixed-shift OT start, lunch (12:00-13:00).
  */
 export function getTimeInGMT7(date) {
   const timeStr = date.toLocaleTimeString('en-US', {
@@ -94,7 +94,7 @@ export function getMinutesDiff(startDate, endDate) {
 
 /**
  * Create a UTC Date representing a specific time on a given dateKey in GMT+7.
- * Used for computing reference times (08:45, 17:30, 17:31) for comparisons.
+ * Used for computing reference times such as shift start/end, lunch, and OT start.
  * Returns a Date object (UTC timestamp) that represents the moment "dateKey HH:mm GMT+7".
  */
 export function createTimeInGMT7(dateKey, hours, minutes) {
@@ -192,12 +192,12 @@ export function countWorkdays(startDate, endDate, holidayDates = new Set()) {
 }
 
 /**
- * Check if time is after OT threshold (17:31 GMT+7)
+ * Check if time is after the default fixed-shift OT threshold (17:30 GMT+7)
  * Used for OT request validation
  * 
  * @param {string} dateKey - Date in "YYYY-MM-DD" format
  * @param {Date} time - Time to check
- * @returns {boolean} True if time > 17:31
+ * @returns {boolean} True if time > 17:30
  */
 export function isInOtPeriod(dateKey, time) {
   // P2 Fix: Guard against invalid dateKey to prevent crash in createTimeInGMT7()
@@ -209,7 +209,7 @@ export function isInOtPeriod(dateKey, time) {
     return false;
   }
   
-  const otThreshold = createTimeInGMT7(dateKey, 17, 31);
+  const otThreshold = createTimeInGMT7(dateKey, 17, 30);
   return time > otThreshold;
 }
 
@@ -241,7 +241,7 @@ export function isAfterShiftEnd(dateKey, checkOutAt) {
  * 
  * @param {string} dateKey - Date in "YYYY-MM-DD" format
  * @param {Date} estimatedEndTime - Estimated end time
- * @returns {number} Minutes from 17:31 to estimatedEndTime
+ * @returns {number} Minutes from 17:30 to estimatedEndTime
  */
 export function getOtDuration(dateKey, estimatedEndTime) {
   // P2 Fix: Guard against invalid dateKey to prevent NaN from createTimeInGMT7()
@@ -253,7 +253,7 @@ export function getOtDuration(dateKey, estimatedEndTime) {
     return 0;
   }
   
-  const otThreshold = createTimeInGMT7(dateKey, 17, 31);
+  const otThreshold = createTimeInGMT7(dateKey, 17, 30);
   return getMinutesDiff(otThreshold, estimatedEndTime);
 }
 
@@ -296,7 +296,7 @@ export function buildOtPreview(dateKey, otMode, otStartTime, estimatedEndTime) {
     dateKey &&
     typeof dateKey === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
-  ) ? createTimeInGMT7(dateKey, 17, 31) : null;
+  ) ? createTimeInGMT7(dateKey, 17, 30) : null;
 
   const separatedStart = (otStartTime instanceof Date && !isNaN(otStartTime.getTime()))
     ? otStartTime

@@ -292,10 +292,8 @@ export function computeLateMinutes(dateKey, checkInAt, scheduleSnapshot = null) 
 
 /**
  * Calculate work minutes with lunch deduction.
- * Default behavior:
- * - SEPARATED OT: cap base work at shift end
- * - CONTINUOUS OT without approval: cap base work at shift end
- * - CONTINUOUS OT with approval: no cap
+ * Fixed-shift workdays count only the in-shift overlap.
+ * Time before shift start is ignored and approved OT no longer inflates workMinutes.
  *
  * @param {string} dateKey
  * @param {Date} checkInAt
@@ -328,29 +326,40 @@ export function computeWorkMinutes(
   const snapshot = scheduleSnapshot
     ? resolveAttendanceScheduleSnapshot(scheduleSnapshot)
     : resolveAttendanceScheduleSnapshot();
-  const normalizedMode = otMode === 'SEPARATED' ? 'SEPARATED' : 'CONTINUOUS';
 
-  let effectiveCheckOut = checkOutAt;
+  const computeMinutesWithLunchDeduction = (windowStart, windowEnd) => {
+    if (!(windowStart instanceof Date) || isNaN(windowStart.getTime())) {
+      return 0;
+    }
+    if (!(windowEnd instanceof Date) || isNaN(windowEnd.getTime()) || windowEnd <= windowStart) {
+      return 0;
+    }
+
+    const totalMinutes = getMinutesDiff(windowStart, windowEnd);
+    const lunchStart = createTimeInGMT7(dateKey, 12, 0);
+    const lunchEnd = createTimeInGMT7(dateKey, 13, 0);
+    const spansLunch = windowStart < lunchStart && windowEnd > lunchEnd;
+
+    if (spansLunch) {
+      return Math.max(0, totalMinutes - 60);
+    }
+
+    return Math.max(0, totalMinutes);
+  };
+
+  if (options.forceNoShiftCap || isFlexibleScheduleType(snapshot.scheduleType)) {
+    return computeMinutesWithLunchDeduction(checkInAt, checkOutAt);
+  }
+
+  const shiftStart = getShiftStartTimeForDate(dateKey, snapshot);
   const shiftEnd = getShiftEndTimeForDate(dateKey, snapshot);
-  const shouldCapByShift = !options.forceNoShiftCap &&
-    Boolean(shiftEnd) &&
-    (normalizedMode === 'SEPARATED' || !otApproved);
-
-  if (shouldCapByShift && checkOutAt > shiftEnd) {
-    effectiveCheckOut = shiftEnd;
+  if (!shiftStart || !shiftEnd) {
+    return computeMinutesWithLunchDeduction(checkInAt, checkOutAt);
   }
 
-  const totalMinutes = getMinutesDiff(checkInAt, effectiveCheckOut);
-
-  const lunchStart = createTimeInGMT7(dateKey, 12, 0);
-  const lunchEnd = createTimeInGMT7(dateKey, 13, 0);
-  const spansLunch = checkInAt < lunchStart && effectiveCheckOut > lunchEnd;
-
-  if (spansLunch) {
-    return Math.max(0, totalMinutes - 60);
-  }
-
-  return Math.max(0, totalMinutes);
+  const regularStart = checkInAt > shiftStart ? checkInAt : shiftStart;
+  const regularEnd = checkOutAt < shiftEnd ? checkOutAt : shiftEnd;
+  return computeMinutesWithLunchDeduction(regularStart, regularEnd);
 }
 
 /**

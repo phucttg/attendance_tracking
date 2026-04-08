@@ -11,7 +11,7 @@ const SHIFT_POLICY = {
     lateGraceMinutes: 5,
     lateTrackingEnabled: true,
     earlyLeaveTrackingEnabled: true,
-    otThresholdMinutes: 17 * 60 + 31
+    otThresholdMinutes: 17 * 60 + 30
   },
   SHIFT_2: {
     scheduleType: 'SHIFT_2',
@@ -20,7 +20,7 @@ const SHIFT_POLICY = {
     lateGraceMinutes: 5,
     lateTrackingEnabled: true,
     earlyLeaveTrackingEnabled: true,
-    otThresholdMinutes: 18 * 60 + 31
+    otThresholdMinutes: 18 * 60 + 30
   },
   FLEXIBLE: {
     scheduleType: 'FLEXIBLE',
