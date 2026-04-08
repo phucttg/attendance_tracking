@@ -166,6 +166,19 @@ describe('OT Approval Workflow Integration', () => {
       .set('Authorization', `Bearer ${token}`);
   }
 
+  async function getMyScheduleWindow(token = employeeToken) {
+    return request(app)
+      .get('/api/work-schedules/me')
+      .set('Authorization', `Bearer ${token}`);
+  }
+
+  async function putMyScheduleWindow(items, token = employeeToken) {
+    return request(app)
+      .put('/api/work-schedules/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ items });
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // HAPPY PATH: Full lifecycle
   // ═══════════════════════════════════════════════════════════════
@@ -431,6 +444,57 @@ describe('OT Approval Workflow Integration', () => {
 
       const att = await Attendance.findOne({ userId: employeeId, date: TODAY }).lean();
       expect(att.otApproved).toBe(false);
+    });
+
+    it('should require schedule before approving continuous OT on workday, then recover after schedule submit', async () => {
+      await WorkScheduleRegistration.deleteMany({ userId: employeeId, workDate: TODAY });
+
+      const otRes = await createOtReq();
+      expect(otRes.status).toBe(201);
+      const requestId = otRes.body.request._id;
+
+      const approveWithoutScheduleRes = await request(app)
+        .post(`/api/requests/${requestId}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(approveWithoutScheduleRes.status).toBe(400);
+      expect(approveWithoutScheduleRes.body.message).toContain('register work schedule');
+
+      let requestDoc = await Request.findById(requestId).lean();
+      expect(requestDoc.status).toBe('PENDING');
+
+      const scheduleWindowRes = await getMyScheduleWindow();
+      expect(scheduleWindowRes.status).toBe(200);
+      const todayItem = scheduleWindowRes.body.items.find((item) => item.workDate === TODAY);
+      expect(todayItem).toBeDefined();
+      expect(todayItem.isReadOnly).toBe(false);
+      expect(todayItem.lockedReason).toBeNull();
+
+      const putScheduleRes = await putMyScheduleWindow(
+        scheduleWindowRes.body.items.map((item) => ({
+          workDate: item.workDate,
+          scheduleType: item.workDate === TODAY ? 'SHIFT_1' : null
+        }))
+      );
+      expect(putScheduleRes.status).toBe(200);
+
+      const approveWithScheduleRes = await request(app)
+        .post(`/api/requests/${requestId}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(approveWithScheduleRes.status).toBe(200);
+      expect(approveWithScheduleRes.body.request.status).toBe('APPROVED');
+
+      requestDoc = await Request.findById(requestId).lean();
+      expect(requestDoc.status).toBe('APPROVED');
+
+      const ciRes = await checkIn();
+      expect(ciRes.status).toBe(200);
+
+      const att = await Attendance.findOne({ userId: employeeId, date: TODAY }).lean();
+      expect(att).toBeDefined();
+      expect(att.otApproved).toBe(true);
+      expect(att.otMode).toBe('CONTINUOUS');
     });
   });
 
