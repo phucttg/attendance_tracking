@@ -30,6 +30,7 @@ import User from '../src/models/User.js';
 import Request from '../src/models/Request.js';
 import Attendance from '../src/models/Attendance.js';
 import Team from '../src/models/Team.js';
+import WorkScheduleRegistration from '../src/models/WorkScheduleRegistration.js';
 import { getTodayDateKey, getDateKey, createTimeInGMT7 } from '../src/utils/dateUtils.js';
 import { computeAttendance, computeWorkMinutes, computeOtMinutes, computePotentialOtMinutes } from '../src/utils/attendanceCompute.js';
 
@@ -60,6 +61,7 @@ describe('OT Request Edge Cases', () => {
     await User.deleteMany({ employeeCode: /^EDGE_OT/ });
     await Request.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^EDGE_OT/ });
     await mongoose.connection.close();
   });
@@ -69,6 +71,7 @@ describe('OT Request Edge Cases', () => {
     await User.deleteMany({ employeeCode: /^EDGE_OT/ });
     await Request.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^EDGE_OT/ });
 
     // Reset time
@@ -115,6 +118,12 @@ describe('OT Request Edge Cases', () => {
       isActive: true
     });
     adminId = admin._id;
+
+    await WorkScheduleRegistration.create({
+      userId: employeeId,
+      workDate: TODAY,
+      scheduleType: 'SHIFT_1'
+    });
 
     // Login all users
     const empLogin = await request(app)
@@ -235,8 +244,8 @@ describe('OT Request Edge Cases', () => {
       // 7. Recompute AFTER approval — should now show OT
       const computedAfter = computeAttendance(attAfter);
       expect(computedAfter.otMinutes).toBeGreaterThan(0); // OT now counted
-      // 17:31 — 20:00 = 149 minutes
-      expect(computedAfter.otMinutes).toBe(149);
+      // 17:30 — 20:00 = 150 minutes
+      expect(computedAfter.otMinutes).toBe(150);
     });
   });
 
@@ -340,7 +349,7 @@ describe('OT Request Edge Cases', () => {
           // otApproved should still be true (reconciliation preserves it)
           expect(att.otApproved).toBe(true);
 
-          // But compute should return OT=0 because checkout < 17:31
+          // But compute should return OT=0 because checkout < 17:30
           const computed = computeAttendance(att);
           expect(computed.otMinutes).toBe(0); // Checkout at 16:00, no OT
           // workMinutes should be 16:00-08:30 minus lunch = ~390 min
@@ -398,7 +407,7 @@ describe('OT Request Edge Cases', () => {
         expect(requestId2).not.toBe(requestId1);
       } else {
         // If system blocks (better behavior), verify error message
-        expect(createRes2.status).toBe(400);
+        expect(createRes2.status).toBe(409);
       }
     });
   });
@@ -514,7 +523,7 @@ describe('OT Request Edge Cases', () => {
       expect(attToday).toBeDefined();
       expect(attToday.otApproved).toBe(true);
       const computed = computeAttendance(attToday);
-      expect(computed.otMinutes).toBe(419);
+      expect(computed.otMinutes).toBe(420);
 
       // 6. No separate attendance for TOMORROW (session still anchored on TODAY)
       const attTomorrow = await Attendance.findOne({ userId: employeeId, date: TOMORROW }).lean();
@@ -568,7 +577,7 @@ describe('OT Request Edge Cases', () => {
   // ═══════════════════════════════════════════════════════════════
 
   describe('Edge #8: Approved OT but checkout before 17:30', () => {
-    it('should compute OT=0 even with otApproved=true if checkout < 17:31', async () => {
+    it('should compute OT=0 even with otApproved=true if checkout < 17:30', async () => {
       // 1. Check in at 08:30
       const checkInTime = new Date('2026-02-10T01:30:00.000Z');
       vi.setSystemTime(checkInTime);
@@ -602,7 +611,7 @@ describe('OT Request Edge Cases', () => {
 
   describe('Edge #9: Minimum 30min validation vs actual OT', () => {
     it('should reject OT request with estimated <30 minutes', async () => {
-      // estimatedEndTime = 17:50 → OT = 17:31 to 17:50 = 19 min < 30
+      // estimatedEndTime = 17:50 → OT = 17:30 to 17:50 = 20 min < 30
       const res = await createOtRequest(
         TODAY,
         `${TODAY}T17:50:00+07:00`,
@@ -614,10 +623,10 @@ describe('OT Request Edge Cases', () => {
     });
 
     it('should accept minimum 30min OT request (boundary)', async () => {
-      // estimatedEndTime = 18:01 → OT = 17:31 to 18:01 = 30 min exactly
+      // estimatedEndTime = 18:00 → OT = 17:30 to 18:00 = 30 min exactly
       const res = await createOtRequest(
         TODAY,
-        `${TODAY}T18:01:00+07:00`,
+        `${TODAY}T18:00:00+07:00`,
         'Minimum OT'
       );
 
@@ -636,15 +645,15 @@ describe('OT Request Edge Cases', () => {
       expect(otRes.status).toBe(201);
       await approveOtRequest(otRes.body.request._id);
 
-      // 3. Checkout at 17:46 → Actual OT = 17:31-17:46 = 15 min (<30)
+      // 3. Checkout at 17:46 → Actual OT = 17:30-17:46 = 16 min (<30)
       const checkOutTime = new Date('2026-02-10T10:46:00.000Z'); // 17:46 GMT+7
       vi.setSystemTime(checkOutTime);
       await doCheckOut();
 
-      // 4. Verify: Actual OT computed is 15 minutes (below 30min threshold)
+      // 4. Verify: Actual OT computed is 16 minutes (below 30min threshold)
       const att = await Attendance.findOne({ userId: employeeId, date: TODAY }).lean();
       const computed = computeAttendance(att);
-      expect(computed.otMinutes).toBe(15);
+      expect(computed.otMinutes).toBe(16);
       // This is by design: 30min is validation gate only, actual is computed from checkout
     });
   });
@@ -832,10 +841,10 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
       expect(result).toBe(480);
     });
 
-    it('Case 2: otApproved=true, checkout=20:00 → full time', () => {
+    it('Case 2: otApproved=true, checkout=20:00 → same regular window', () => {
       const result = computeWorkMinutes(dateKey, checkIn, gmt7(20, 0), true);
-      // 08:30 → 20:00 = 690 min - 60 lunch = 630
-      expect(result).toBe(630);
+      // Regular work remains 08:30 → 17:30 = 540 min - 60 lunch = 480
+      expect(result).toBe(480);
     });
 
     it('Case 3: otApproved=false, checkout=16:30 → no cap needed', () => {
@@ -855,10 +864,10 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
       expect(result).toBe(480);
     });
 
-    it('Case 7: otApproved=true, checkout=17:31 → 1 minute past boundary', () => {
+    it('Case 7: otApproved=true, checkout=17:31 → regular work still ends at shift end', () => {
       const result = computeWorkMinutes(dateKey, checkIn, gmt7(17, 31), true);
-      // 08:30 → 17:31 = 541 - 60 = 481
-      expect(result).toBe(481);
+      // Approved OT does not expand regular workMinutes
+      expect(result).toBe(480);
     });
 
     it('Case 8: otApproved=false, checkout=17:31 → CAP at 17:30', () => {
@@ -873,18 +882,18 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
       expect(computeOtMinutes(dateKey, gmt7(20, 0), false)).toBe(0);
     });
 
-    it('Case 2: otApproved=true, checkout=20:00 → 149 min', () => {
-      // 17:31 → 20:00 = 149 min
-      expect(computeOtMinutes(dateKey, gmt7(20, 0), true)).toBe(149);
+    it('Case 2: otApproved=true, checkout=20:00 → 150 min', () => {
+      // 17:30 → 20:00 = 150 min
+      expect(computeOtMinutes(dateKey, gmt7(20, 0), true)).toBe(150);
     });
 
-    it('Case 3: otApproved=true, checkout=17:31 → 0 (boundary: <=)', () => {
-      // 17:31 <= 17:31 → 0
-      expect(computeOtMinutes(dateKey, gmt7(17, 31), true)).toBe(0);
+    it('Case 3: otApproved=true, checkout=17:30 → 0 (boundary: <=)', () => {
+      // 17:30 <= 17:30 → 0
+      expect(computeOtMinutes(dateKey, gmt7(17, 30), true)).toBe(0);
     });
 
-    it('Case 4: otApproved=true, checkout=17:32 → 1 min', () => {
-      expect(computeOtMinutes(dateKey, gmt7(17, 32), true)).toBe(1);
+    it('Case 4: otApproved=true, checkout=17:31 → 1 min', () => {
+      expect(computeOtMinutes(dateKey, gmt7(17, 31), true)).toBe(1);
     });
 
     it('Case 5: otApproved=true, checkout=16:30 → 0', () => {
@@ -900,11 +909,12 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
   describe('computePotentialOtMinutes — ignores approval', () => {
     it('should compute OT regardless of approval status', () => {
       const result = computePotentialOtMinutes(dateKey, gmt7(20, 0));
-      expect(result).toBe(149); // Always computes
+      expect(result).toBe(150); // Always computes
     });
 
-    it('should return 0 if checkout before 17:31', () => {
+    it('should return 0 if checkout is at or before 17:30', () => {
       expect(computePotentialOtMinutes(dateKey, gmt7(17, 0))).toBe(0);
+      expect(computePotentialOtMinutes(dateKey, gmt7(17, 30))).toBe(0);
     });
 
     it('should handle invalid date', () => {
@@ -922,8 +932,8 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
         otApproved: true
       };
       const result = computeAttendance(attendance);
-      expect(result.otMinutes).toBe(149);
-      expect(result.workMinutes).toBe(630); // Full work time
+      expect(result.otMinutes).toBe(150);
+      expect(result.workMinutes).toBe(480); // Regular work stays in-shift only
     });
 
     it('should default otApproved to false if missing', () => {
@@ -984,9 +994,9 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
 
     // ─── Weekend path verification (does NOT use computeOtMinutes) ──
 
-    it('should NOT use computeOtMinutes path for weekend (otMinutes = full work, not post-17:31)', () => {
-      // Saturday 09:00-16:00: checkout BEFORE 17:31
-      // If weekday logic were used: otMinutes=0 (checkout before 17:31)
+    it('should NOT use computeOtMinutes path for weekend (otMinutes = full work, not post-17:30)', () => {
+      // Saturday 09:00-16:00: checkout BEFORE 17:30
+      // If weekday logic were used: otMinutes=0 (checkout before 17:30)
       // Weekend logic: otMinutes = workMinutes
       const saturdayKey = '2026-02-14'; // Saturday
       const attendance = {
@@ -1000,13 +1010,13 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
       // 09:00→16:00 = 7h = 420 min, spans lunch → 420 - 60 = 360
       expect(result.workMinutes).toBe(360);
       expect(result.otMinutes).toBe(360);
-      // Verify otMinutes is NOT 0 (which computeOtMinutes would return for pre-17:31 checkout)
+      // Verify otMinutes is NOT 0 (which computeOtMinutes would return for pre-17:30 checkout)
       expect(result.otMinutes).toBeGreaterThan(0);
     });
 
     it('should NOT use computePotentialOtMinutes for weekend (otMinutes = weekendMinutes)', () => {
       // Saturday with checkout at 20:00
-      // computePotentialOtMinutes would return 149 (20:00 - 17:31)
+      // computePotentialOtMinutes would return 150 (20:00 - 17:30)
       // Weekend logic should return full workMinutes instead
       const saturdayKey = '2026-02-14'; // Saturday
       const attendance = {
@@ -1021,7 +1031,7 @@ describe('OT Computation Decision Table (Unit Tests)', () => {
       expect(result.workMinutes).toBe(600);
       expect(result.otMinutes).toBe(600);
       // NOT 149 from computePotentialOtMinutes
-      expect(result.otMinutes).not.toBe(149);
+      expect(result.otMinutes).not.toBe(150);
     });
 
     it('should not affect weekday OT behavior (regression guard)', () => {

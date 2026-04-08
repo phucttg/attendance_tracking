@@ -405,7 +405,7 @@ describe('P1-2: Past OT Time Validation (STRICT)', () => {
 
       const today = getDateKey(mockNow);
       
-      // Future time but before 17:31 (not in OT period)
+      // Future time but before 17:30 (not in OT period)
       const futureButNotOtTime = new Date('2026-02-10T10:00:00Z'); // 17:00 GMT+7
 
       await expect(
@@ -414,7 +414,7 @@ describe('P1-2: Past OT Time Validation (STRICT)', () => {
           estimatedEndTime: futureButNotOtTime,
           reason: 'Not in OT period'
         })
-      ).rejects.toThrow(/OT must start after 17:31/);
+      ).rejects.toThrow(/OT cannot end before 17:30/);
       // Should pass time check, fail OT period check
     });
   });

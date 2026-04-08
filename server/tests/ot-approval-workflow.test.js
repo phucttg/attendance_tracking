@@ -22,6 +22,7 @@ import User from '../src/models/User.js';
 import Request from '../src/models/Request.js';
 import Attendance from '../src/models/Attendance.js';
 import Team from '../src/models/Team.js';
+import WorkScheduleRegistration from '../src/models/WorkScheduleRegistration.js';
 import { getTodayDateKey } from '../src/utils/dateUtils.js';
 
 const FIXED_TIME = new Date('2026-02-10T03:00:00.000Z'); // Tue 10:00 GMT+7
@@ -49,6 +50,7 @@ describe('OT Approval Workflow Integration', () => {
     await User.deleteMany({ employeeCode: /^WFLOW_OT/ });
     await Request.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^WFLOW_OT/ });
     await mongoose.connection.close();
   });
@@ -57,6 +59,7 @@ describe('OT Approval Workflow Integration', () => {
     await User.deleteMany({ employeeCode: /^WFLOW_OT/ });
     await Request.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^WFLOW_OT/ });
     vi.setSystemTime(FIXED_TIME);
 
@@ -96,6 +99,12 @@ describe('OT Approval Workflow Integration', () => {
       role: 'MANAGER', teamId: otherTeamId, isActive: true
     });
     otherManagerId = otherManager._id;
+
+    await WorkScheduleRegistration.create({
+      userId: employeeId,
+      workDate: TODAY,
+      scheduleType: 'SHIFT_1'
+    });
 
     // Login
     const empLogin = await request(app).post('/api/auth/login')
@@ -673,10 +682,10 @@ describe('OT Approval Workflow Integration', () => {
       expect(res.status).toBe(400);
     });
 
-    it('should reject estimatedEndTime before 17:31', async () => {
+    it('should reject estimatedEndTime before 17:30', async () => {
       const res = await createOtReq(TODAY, `${TODAY}T17:00:00+07:00`);
       expect(res.status).toBe(400);
-      expect(res.body.message).toContain('17:31');
+      expect(res.body.message).toContain('17:30');
     });
 
     it('should reject OT < 30 minutes', async () => {
@@ -869,7 +878,7 @@ describe('OT Approval Workflow Integration', () => {
       vi.setSystemTime(ciTime);
       await checkIn();
 
-      // Checkout at 18:00 (after 17:31) WITHOUT OT request
+      // Checkout at 18:00 (after fixed-shift OT start) WITHOUT OT request
       const coTime = new Date('2026-02-10T11:00:00.000Z');
       vi.setSystemTime(coTime);
       await checkOut();

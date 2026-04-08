@@ -8,7 +8,7 @@
  * Purpose: Verify that weekend/holiday OT changes do NOT affect
  * existing weekday OT behavior. Guards against regression in:
  *   - computeAttendance weekday path (otApproved flag)
- *   - computeWorkMinutes cap at 17:30 when !otApproved
+ *   - computeWorkMinutes fixed-shift overlap behavior
  *   - computeOtMinutes strict approval requirement
  *   - computePotentialOtMinutes (always computes)
  *
@@ -33,7 +33,7 @@ describe('Weekday OT regression guard — no behavior change', () => {
   // ─── Group 1: computeAttendance weekday path ──────────────────
 
   describe('computeAttendance weekday with otApproved=true', () => {
-    it('returns OT minutes when approved and checkout after 17:31', () => {
+    it('returns regular work and OT minutes without overlap when approved', () => {
       const result = computeAttendance({
         date: WEEKDAY,
         checkInAt: gmt7(8, 0),
@@ -42,10 +42,10 @@ describe('Weekday OT regression guard — no behavior change', () => {
       });
 
       expect(result.status).not.toBe('WEEKEND_OR_HOLIDAY');
-      // 20:00 - 17:31 = 149 min OT
-      expect(result.otMinutes).toBe(149);
-      // 08:00→20:00 = 12h - 1h lunch = 660
-      expect(result.workMinutes).toBe(660);
+      // 20:00 - 17:30 = 150 min OT
+      expect(result.otMinutes).toBe(150);
+      // 08:00→17:30 = 9.5h - 1h lunch = 510 regular minutes
+      expect(result.workMinutes).toBe(510);
     });
   });
 
@@ -60,7 +60,7 @@ describe('Weekday OT regression guard — no behavior change', () => {
 
       expect(result.status).not.toBe('WEEKEND_OR_HOLIDAY');
       expect(result.otMinutes).toBe(0);
-      // Capped at 17:30: 08:00→17:30 = 9.5h - 1h lunch = 510
+      // Regular window stays within the shift end
       expect(result.workMinutes).toBe(510);
     });
   });
@@ -89,25 +89,32 @@ describe('Weekday OT regression guard — no behavior change', () => {
       });
 
       expect(result.status).toBe('LATE');
-      expect(result.lateMinutes).toBe(45);
-      // 20:00 - 17:31 = 149 min OT
-      expect(result.otMinutes).toBe(149);
+      expect(result.lateMinutes).toBe(90);
+      // 20:00 - 17:30 = 150 min OT
+      expect(result.otMinutes).toBe(150);
+      // 09:30→17:30 = 8h - 1h lunch = 420 regular minutes
+      expect(result.workMinutes).toBe(420);
     });
   });
 
   // ─── Group 2: computeWorkMinutes cap behavior ────────────────
 
-  describe('computeWorkMinutes cap at 17:30 when !otApproved', () => {
-    it('caps checkout at 17:30 when otApproved=false', () => {
+  describe('computeWorkMinutes fixed-shift overlap', () => {
+    it('keeps regular work within the shift when otApproved=false', () => {
       const result = computeWorkMinutes(WEEKDAY, gmt7(8, 0), gmt7(20, 0), false);
       // 08:00→17:30 = 9.5h = 570 min, spans lunch → 570 - 60 = 510
       expect(result).toBe(510);
     });
 
-    it('does not cap checkout when otApproved=true', () => {
+    it('keeps the same regular work even when otApproved=true', () => {
       const result = computeWorkMinutes(WEEKDAY, gmt7(8, 0), gmt7(20, 0), true);
-      // 08:00→20:00 = 12h = 720 min, spans lunch → 720 - 60 = 660
-      expect(result).toBe(660);
+      // Approved OT no longer expands workMinutes
+      expect(result).toBe(510);
+    });
+
+    it('ignores pre-shift time on fixed-shift workdays', () => {
+      const result = computeWorkMinutes(WEEKDAY, gmt7(1, 34), gmt7(17, 34), false);
+      expect(result).toBe(510);
     });
   });
 
@@ -119,13 +126,13 @@ describe('Weekday OT regression guard — no behavior change', () => {
       expect(result).toBe(0);
     });
 
-    it('returns minutes after 17:31 when otApproved=true', () => {
+    it('returns minutes from 17:30 when otApproved=true', () => {
       const result = computeOtMinutes(WEEKDAY, gmt7(20, 0), true);
-      // 20:00 - 17:31 = 149
-      expect(result).toBe(149);
+      // 20:00 - 17:30 = 150
+      expect(result).toBe(150);
     });
 
-    it('returns 0 when checkout is before 17:31 even with approval', () => {
+    it('returns 0 when checkout is before 17:30 even with approval', () => {
       const result = computeOtMinutes(WEEKDAY, gmt7(17, 0), true);
       expect(result).toBe(0);
     });
@@ -136,44 +143,44 @@ describe('Weekday OT regression guard — no behavior change', () => {
   describe('computePotentialOtMinutes ignores approval flag', () => {
     it('returns OT regardless of approval status', () => {
       const result = computePotentialOtMinutes(WEEKDAY, gmt7(20, 0));
-      // 20:00 - 17:31 = 149
-      expect(result).toBe(149);
+      // 20:00 - 17:30 = 150
+      expect(result).toBe(150);
     });
 
-    it('returns 0 if checkout before 17:31', () => {
+    it('returns 0 if checkout is at or before 17:30', () => {
       expect(computePotentialOtMinutes(WEEKDAY, gmt7(17, 0))).toBe(0);
-      expect(computePotentialOtMinutes(WEEKDAY, gmt7(17, 31))).toBe(0);
+      expect(computePotentialOtMinutes(WEEKDAY, gmt7(17, 30))).toBe(0);
     });
   });
 
   // ─── Group 5: Status classification regression ────────────────
 
   describe('weekday status classification unchanged', () => {
-    it('ON_TIME for checkIn <= 08:45 and checkOut >= 17:30', () => {
+    it('ON_TIME for checkIn <= 08:05 and checkOut >= 17:30', () => {
       const result = computeAttendance({
         date: WEEKDAY,
-        checkInAt: gmt7(8, 30),
+        checkInAt: gmt7(8, 5),
         checkOutAt: gmt7(17, 30),
         otApproved: false
       });
       expect(result.status).toBe('ON_TIME');
     });
 
-    it('LATE for checkIn > 08:45', () => {
+    it('LATE for checkIn > 08:05', () => {
       const result = computeAttendance({
         date: WEEKDAY,
-        checkInAt: gmt7(9, 0),
+        checkInAt: gmt7(8, 6),
         checkOutAt: gmt7(17, 30),
         otApproved: false
       });
       expect(result.status).toBe('LATE');
-      expect(result.lateMinutes).toBe(15);
+      expect(result.lateMinutes).toBe(6);
     });
 
     it('LATE_AND_EARLY for late checkIn + early checkOut', () => {
       const result = computeAttendance({
         date: WEEKDAY,
-        checkInAt: gmt7(9, 0),
+        checkInAt: gmt7(8, 6),
         checkOutAt: gmt7(16, 0),
         otApproved: false
       });

@@ -289,7 +289,7 @@ describe('C6: Excel Numeric Hour Columns (Manual Validation)', () => {
         expect(otHoursCell.type).toBe(ExcelJS.ValueType.Number);
         expect(typeof otHoursCell.value).toBe('number');
         
-        // OT starts after 17:30, so from 17:31 to 19:00 = ~1.5 hours
+        // OT starts at 17:30, so from 17:30 to 19:00 = 1.5 hours
         expect(otHoursCell.value).toBeGreaterThan(0);
     });
 

@@ -27,7 +27,7 @@ const TEST_EMPLOYEE = {
     password: 'Password123',
 };
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = process.env.PLAYWRIGHT_API_BASE_URL || 'http://localhost:9999';
 
 /**
  * Helper: Login to dashboard
@@ -483,11 +483,11 @@ test.describe('Cross-Midnight Checkout UI Display - E2E', () => {
     test.describe('Section 3: Status Computation Cross-Midnight', () => {
         /**
          * Test Case: E2E-CM-STAT-01
-         * ISTQB: Equivalence Partitioning (VP3: Cross-midnight with OT >17:31)
+         * ISTQB: Equivalence Partitioning (VP3: Cross-midnight with OT after shift end)
          * ISO 25010: Functional Suitability - Correctness
          * Priority: CRITICAL
          * 
-         * Scenario: User worked 17:31 → 02:00 next day (8.5h OT)
+         * Scenario: SHIFT_1 user worked 17:30 → 02:00 next day (8.5h OT)
          * Expected: OT minutes = 509, displayed correctly on dashboard/history
          */
         test('[E2E-CM-STAT-01] Should calculate OT correctly for cross-midnight overtime', async ({ page }) => {
@@ -513,8 +513,8 @@ test.describe('Cross-Midnight Checkout UI Display - E2E', () => {
                     // OT can be 0 (no overtime) or positive
                     expect(otValue).toBeGreaterThanOrEqual(0);
                     
-                    // For cross-midnight OT test, we expect OT > 0 if checkout after 17:31
-                    // But accept OT=0 if user checked out before 17:31 (valid scenario)
+                    // For cross-midnight OT test, we expect OT > 0 if checkout after shift end
+                    // But accept OT=0 if user checked out before shift end (valid scenario)
                     console.log(`⚠️  OT value: ${otValue} minutes ${otValue === 0 ? '(no overtime worked)' : ''}`);
                 } else {
                     // No number found - acceptable if UI shows "--" or "N/A"

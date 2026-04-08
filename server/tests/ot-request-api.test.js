@@ -6,6 +6,7 @@ import User from '../src/models/User.js';
 import Request from '../src/models/Request.js';
 import Attendance from '../src/models/Attendance.js';
 import Team from '../src/models/Team.js';
+import WorkScheduleRegistration from '../src/models/WorkScheduleRegistration.js';
 import bcrypt from 'bcrypt';
 import { getTodayDateKey } from '../src/utils/dateUtils.js';
 
@@ -34,6 +35,7 @@ describe('OT Request API Integration', () => {
     await User.deleteMany({ employeeCode: /^TEST_OT/ });
     await Request.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^TEST_OT/ });
     await mongoose.connection.close();
   });
@@ -43,6 +45,7 @@ describe('OT Request API Integration', () => {
     await User.deleteMany({ employeeCode: /^TEST_OT/ });
     await Request.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^TEST_OT/ });
 
     // Create test team
@@ -62,6 +65,12 @@ describe('OT Request API Integration', () => {
       isActive: true
     });
     employeeId = employee._id;
+
+    await WorkScheduleRegistration.create({
+      userId: employeeId,
+      workDate: getTodayDateKey(),
+      scheduleType: 'SHIFT_1'
+    });
 
     const manager = await User.create({
       name: 'Test Manager OT',
@@ -103,7 +112,7 @@ describe('OT Request API Integration', () => {
         .send({
           type: 'OT_REQUEST',
           date: today,
-          estimatedEndTime: `${today}T19:00:00+07:00`,  // 19:00 = after 17:31
+          estimatedEndTime: `${today}T19:00:00+07:00`,  // 19:00 = after shift end for fixed shifts
           reason: 'Need to finish urgent project deployment'
         });
 
@@ -249,15 +258,11 @@ describe('OT Request API Integration', () => {
         .post(`/api/requests/${requestId}/approve`)
         .set('Authorization', `Bearer ${managerToken}`);
 
-      console.log('Approve response:', approveRes.status, approveRes.body);
-
       // Verify attendance has otApproved flag
       const attendance = await Attendance.findOne({
         userId: employeeId,
         date: today
       });
-
-      console.log('Attendance after approval:', attendance);
 
       expect(attendance).toBeDefined();
       expect(attendance.otApproved).toBe(true);
@@ -288,9 +293,6 @@ describe('OT Request API Integration', () => {
       const checkInRes = await request(app)
         .post('/api/attendance/check-in')
         .set('Authorization', `Bearer ${employeeToken}`);
-
-      // Debug: check response structure
-      console.log('Check-in response:', checkInRes.body);
 
       // Verify otApproved is auto-applied (check response or query DB)
       if (checkInRes.body.otApproved !== undefined) {

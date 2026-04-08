@@ -3,7 +3,7 @@
  */
 
 // Base URL for the API
-export const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
+export const BASE_URL = __ENV.BASE_URL || 'http://localhost:9999';
 
 // Test Users (pre-seeded in database)
 export const TEST_USERS = {

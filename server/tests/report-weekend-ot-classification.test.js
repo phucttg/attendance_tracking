@@ -162,8 +162,8 @@ describe('Monthly report weekend OT classification', () => {
     const row = result.summary.find(item => item.user.employeeCode === 'WKOT001');
 
     expect(row).toBeDefined();
-    // Sat: 480 (weekend, auto-approved) + Tue: 149 (20:00 - 17:31, approved OT)
-    expect(row.approvedOtMinutes).toBe(480 + 149);
+    // Sat: 480 (weekend, auto-approved) + Tue: 150 (20:00 - 17:30, approved OT)
+    expect(row.approvedOtMinutes).toBe(480 + 150);
     expect(row.unapprovedOtMinutes).toBe(0);
   });
 
@@ -193,8 +193,8 @@ describe('Monthly report weekend OT classification', () => {
 
     expect(row).toBeDefined();
     expect(row.approvedOtMinutes).toBe(480); // Only weekend
-    // Weekday unapproved: computePotentialOtMinutes(Wed, 20:00) = 149
-    expect(row.unapprovedOtMinutes).toBe(149);
+    // Weekday unapproved: computePotentialOtMinutes(Wed, 20:00) = 150
+    expect(row.unapprovedOtMinutes).toBe(150);
   });
 
   // ─── BVA: Weekend with no checkout (incomplete session) ───────

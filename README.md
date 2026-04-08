@@ -166,7 +166,7 @@ cp .env.example .env
 
 ```dotenv
 # Server Configuration
-PORT=3000
+PORT=9999
 
 # MongoDB Connection
 # For local MongoDB:
@@ -222,7 +222,7 @@ cp .env.example .env
 
 ```dotenv
 # API Base URL
-VITE_API_BASE_URL=http://localhost:3000/api
+VITE_API_BASE_URL=http://localhost:9999/api
 ```
 
 ---
@@ -242,7 +242,7 @@ npm run dev
 Expected output:
 ```
 ✓ MongoDB Connected
-✓ Server running on http://localhost:3000
+✓ Server running on http://localhost:9999
 ```
 
 **Terminal 2 - Start Frontend Development Server:**
@@ -261,7 +261,7 @@ VITE v5.x.x  ready in 500 ms
 
 **Access the application:**
 - 🌐 Frontend: [http://localhost:5173](http://localhost:5173)
-- 🔌 Backend API: [http://localhost:3000/api](http://localhost:3000/api)
+- 🔌 Backend API: [http://localhost:9999/api](http://localhost:9999/api)
 
 ### Production Mode
 
@@ -644,20 +644,20 @@ This application implements multiple layers of security:
 
 ### Port Already in Use
 
-**Problem**: `Error: listen EADDRINUSE: address already in use :::3000`
+**Problem**: `Error: listen EADDRINUSE: address already in use :::9999`
 
 **Solutions**:
 ```bash
-# Find process using port 3000
-lsof -i :3000    # macOS/Linux
-netstat -ano | findstr :3000  # Windows
+# Find process using port 9999
+lsof -i :9999    # macOS/Linux
+netstat -ano | findstr :9999  # Windows
 
 # Kill the process
 kill -9 <PID>    # macOS/Linux
 taskkill /PID <PID> /F  # Windows
 
 # Or change PORT in server/.env
-PORT=3001
+PORT=9999
 ```
 
 ### CORS Errors

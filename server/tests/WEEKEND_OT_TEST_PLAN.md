@@ -151,9 +151,9 @@ Already covers Saturday OT, Sunday morning OT, and holiday forced-true.
 // Within existing describe('computeAttendance — full integration with otApproved')
 // Add after existing weekend tests
 
-it('should NOT use computeOtMinutes path for weekend (otMinutes = full work, not post-17:31)', () => {
-  // Saturday 09:00-16:00 (before 17:31, but still full OT)
-  // If weekday logic were used: otMinutes=0 (checkout before 17:31)
+it('should NOT use computeOtMinutes path for weekend (otMinutes = full work, not post-shift-end only)', () => {
+  // Saturday 09:00-16:00 (before fixed-shift OT start, but still full OT)
+  // If weekday logic were used: otMinutes=0 (checkout before shift end)
   // Weekend logic: otMinutes = workMinutes = 360
 });
 
@@ -289,12 +289,12 @@ Guard that existing weekday OT behavior is NOT affected by the weekend/holiday O
 
 | # | Test Case | Input | Expected | ISTQB Technique |
 |---|-----------|-------|----------|-----------------|
-| 5.1 | Weekday checkout after 17:31 with otApproved=true | Tue 08:00–20:00, approved | otMinutes>0 (from computeOtMinutes), workMinutes full | EP: weekday OT |
-| 5.2 | Weekday checkout after 17:31 with otApproved=false | Tue 08:00–20:00, not approved | otMinutes=0, workMinutes capped at 17:30 | EP: strict rule |
+| 5.1 | Weekday checkout after shift end with otApproved=true | Tue 08:00–20:00, approved | otMinutes>0 (from computeOtMinutes), workMinutes=510 | EP: weekday OT |
+| 5.2 | Weekday checkout after shift end with otApproved=false | Tue 08:00–20:00, not approved | otMinutes=0, workMinutes=510 | EP: strict rule |
 | 5.3 | Weekday checkout before 17:30 | Tue 08:00–16:00 | otMinutes=0, status=EARLY_LEAVE | EP: no OT |
-| 5.4 | Weekday late + OT approved | Tue 09:30–20:00, approved | lateMinutes=45, otMinutes=149, status=LATE | EP: combined |
-| 5.5 | Weekday computeWorkMinutes caps at 17:30 | Tue 08:00–20:00, otApproved=false | workMinutes=510 (08:00–17:30 minus lunch) | BVA: cap |
-| 5.6 | Weekday computeWorkMinutes uncapped | Tue 08:00–20:00, otApproved=true | workMinutes=660 (08:00–20:00 minus lunch) | BVA: uncap |
+| 5.4 | Weekday late + OT approved | Tue 09:30–20:00, approved | lateMinutes=90, otMinutes=150, status=LATE | EP: combined |
+| 5.5 | Weekday computeWorkMinutes keeps in-shift overlap without approval | Tue 08:00–20:00, otApproved=false | workMinutes=510 (08:00–17:30 minus lunch) | BVA: cap |
+| 5.6 | Weekday computeWorkMinutes stays in-shift overlap with approval | Tue 08:00–20:00, otApproved=true | workMinutes=510 (08:00–17:30 minus lunch) | BVA: no overlap |
 | 5.7 | Weekday report: unapproved OT classification | Tue 08:00–20:00 otApproved=false | unapprovedOtMinutes = computePotentialOtMinutes | DT: classification |
 | 5.8 | Weekday report: approved OT classification | Tue 08:00–20:00 otApproved=true | approvedOtMinutes from computeOtMinutes | DT: classification |
 | 5.9 | computeOtMinutes still requires approval on weekday | Tue checkout=20:00, otApproved=false | 0 | EP: strict |
@@ -310,17 +310,17 @@ Guard that existing weekday OT behavior is NOT affected by the weekend/holiday O
 
 describe('Weekday OT regression guard — no behavior change', () => {
   // Group 1: computeAttendance weekday path
-  //   - otApproved=true → full OT
-  //   - otApproved=false → strict cap
+  //   - otApproved=true → regular work + approved OT split
+  //   - otApproved=false → regular work only, no OT
   //   - Early leave, late, on-time statuses unchanged
   
-  // Group 2: computeWorkMinutes cap behavior
-  //   - Cap at 17:30 when !otApproved
-  //   - Uncapped when otApproved
+  // Group 2: computeWorkMinutes fixed-shift behavior
+  //   - Regular work ends at shift end regardless of otApproved
+  //   - Pre-shift time is ignored
   
   // Group 3: computeOtMinutes strict rule
   //   - Returns 0 when !otApproved
-  //   - Returns minutes after 17:31 when approved
+  //   - Returns minutes after shift end when approved
   
   // Group 4: Report classification weekday
   //   - otApproved=true → approvedOtMinutes
@@ -344,8 +344,8 @@ These cases span multiple test files and should be verified at the appropriate l
 | Weekend  | false      | checkIn only     | 0                  | N/A (incomplete)      |
 | Holiday  | false      | Yes (complete)   | = workMinutes      | approved              |
 | Holiday  | true       | Yes (complete)   | = workMinutes      | approved              |
-| Weekday  | false      | Yes (after 17:31)| 0                  | unapproved (potential)|
-| Weekday  | true       | Yes (after 17:31)| >0 (after 17:31)   | approved              |
+| Weekday  | false      | Yes (after shift end)| 0               | unapproved (potential)|
+| Weekday  | true       | Yes (after shift end)| >0 (after shift end) | approved          |
 | Weekday  | false      | Yes (before 17:30)| 0                 | N/A                   |
 
 ### State Transition: Attendance Session on Weekend

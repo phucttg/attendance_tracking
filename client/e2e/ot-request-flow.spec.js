@@ -362,7 +362,7 @@ test.describe('OT Request Flow — E2E', () => {
       await expect(page.getByText('Không thể đăng ký OT cho ngày trong quá khứ')).toBeVisible();
     });
 
-    test('Shows error for end time before 17:31', async ({ page }) => {
+    test('Shows error for end time before fixed-shift OT start', async ({ page }) => {
       await login(page, EMPLOYEE);
       await goToRequests(page);
 
@@ -372,7 +372,9 @@ test.describe('OT Request Flow — E2E', () => {
       await page.locator('#ot-reason').fill('Early end test');
       await page.getByRole('button', { name: 'Tạo yêu cầu' }).click();
 
-      await expect(page.getByText('Giờ về phải sau 17:31')).toBeVisible();
+      await expect(
+        page.getByText(/OT liên tục không thể kết thúc trước 17:30|OT cannot end before 17:30/i)
+      ).toBeVisible();
     });
 
     test('Shows error for OT < 30 minutes', async ({ page }) => {
