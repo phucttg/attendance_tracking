@@ -1,6 +1,10 @@
 import express from 'express';
 import * as reportController from '../controllers/reportController.js';
 import { authenticate, authorize } from '../middlewares/authMiddleware.js';
+import {
+  reportExportLimiter,
+  reportMonthlyLimiter
+} from '../middlewares/rateLimitMiddleware.js';
 
 const router = express.Router();
 
@@ -8,10 +12,10 @@ const router = express.Router();
 
 // GET /api/reports/monthly?month=YYYY-MM&scope=team|company&teamId?
 // Roles: MANAGER | ADMIN
-router.get('/monthly', authenticate, authorize('MANAGER', 'ADMIN'), reportController.getMonthlyReport);
+router.get('/monthly', authenticate, reportMonthlyLimiter, authorize('MANAGER', 'ADMIN'), reportController.getMonthlyReport);
 
 // GET /api/reports/monthly/export?month=YYYY-MM&scope=team|company&teamId?
 // Roles: MANAGER | ADMIN
-router.get('/monthly/export', authenticate, authorize('MANAGER', 'ADMIN'), reportController.exportMonthlyReport);
+router.get('/monthly/export', authenticate, reportExportLimiter, authorize('MANAGER', 'ADMIN'), reportController.exportMonthlyReport);
 
 export default router;
