@@ -6,7 +6,8 @@ import {
   getDateKey,
   getSeparatedOtDuration,
   getTodayDateKey,
-  isWeekend
+  isWeekend,
+  isWithinCurrentMonthPastWindow
 } from '../utils/dateUtils.js';
 import { toValidDate, assertHasTzIfString } from './requestDateValidation.js';
 import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
@@ -15,12 +16,14 @@ import {
   getEarliestContinuousOtEndMinutes,
   getOtThresholdMinutes,
   getOtThresholdTimeForDate,
+  isFixedShiftScheduleType,
   isFlexibleScheduleType,
   normalizeScheduleType
 } from '../utils/schedulePolicy.js';
 
 const BUSINESS_TZ_OFFSET_MS = 7 * 60 * 60 * 1000;
 const OT_CROSS_MIDNIGHT_CUTOFF = '08:00';
+const OT_MIN_DURATION_MINUTES = 30;
 
 const getNextDateKey = (dateKey) => {
   const [year, month, day] = dateKey.split('-').map(Number);
@@ -28,11 +31,24 @@ const getNextDateKey = (dateKey) => {
   return nextDate.toISOString().slice(0, 10);
 };
 
+const getPreviousDateKey = (dateKey) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const previousDate = new Date(Date.UTC(year, month - 1, day - 1, 12, 0, 0));
+  return previousDate.toISOString().slice(0, 10);
+};
+
 const getTimeKeyInGmt7 = (date) => {
   const shifted = new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
   const hh = String(shifted.getUTCHours()).padStart(2, '0');
   const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
+};
+
+const isBeforeCrossMidnightCutoff = (date) => {
+  if (!(date instanceof Date) || isNaN(date.getTime())) {
+    return false;
+  }
+  return getTimeKeyInGmt7(date) < OT_CROSS_MIDNIGHT_CUTOFF;
 };
 
 const resolveEffectiveScheduleType = async (userId, date, attendanceRecord = null) => {
@@ -77,7 +93,7 @@ const isWorkdayDate = async (dateKey) => {
  */
 export const createOtRequest = async (userId, requestData) => {
   const {
-    date,
+    date: inputDate,
     estimatedEndTime,
     reason,
     otMode: rawOtMode = 'CONTINUOUS',
@@ -93,7 +109,7 @@ export const createOtRequest = async (userId, requestData) => {
   }
 
   // Validation 0.5: date format must be valid (defensive)
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!inputDate || !/^\d{4}-\d{2}-\d{2}$/.test(inputDate)) {
     const error = new Error('Invalid date format. Expected YYYY-MM-DD');
     error.statusCode = 400;
     throw error;
@@ -101,7 +117,7 @@ export const createOtRequest = async (userId, requestData) => {
 
   // Validation 0.6: estimatedEndTime timezone (if string)
   assertHasTzIfString(estimatedEndTime, 'estimatedEndTime');
-  if (otMode === 'SEPARATED') {
+  if (otStartTime != null) {
     assertHasTzIfString(otStartTime, 'otStartTime');
   }
 
@@ -119,7 +135,7 @@ export const createOtRequest = async (userId, requestData) => {
     throw error;
   }
 
-  const startTime = otMode === 'SEPARATED'
+  const startTime = otStartTime
     ? toValidDate(otStartTime, 'otStartTime')
     : null;
 
@@ -139,26 +155,43 @@ export const createOtRequest = async (userId, requestData) => {
     throw error;
   }
 
-  // Validation 1: Date must be today or future (E1, E2)
   const todayKey = getTodayDateKey();
-  if (date < todayKey) {
-    const error = new Error('Cannot create OT request for past dates');
+  const tomorrowKey = getNextDateKey(todayKey);
+
+  const isSeparatedEarlyMorningRange = (
+    otMode === 'SEPARATED' &&
+    Boolean(startTime) &&
+    getDateKey(startTime) === inputDate &&
+    getDateKey(endTime) === inputDate &&
+    isBeforeCrossMidnightCutoff(startTime) &&
+    isBeforeCrossMidnightCutoff(endTime)
+  );
+  const isCarryOverSeparated = (
+    inputDate === todayKey &&
+    isBeforeCrossMidnightCutoff(new Date()) &&
+    isSeparatedEarlyMorningRange
+  );
+  const isTomorrowPreRegisteredSeparated = (
+    otMode === 'SEPARATED' &&
+    inputDate === tomorrowKey &&
+    isSeparatedEarlyMorningRange
+  );
+
+  if (otMode === 'SEPARATED' && inputDate === tomorrowKey && !isTomorrowPreRegisteredSeparated) {
+    const error = new Error('SEPARATED OT đăng ký trước cho ngày mai chỉ hỗ trợ khung 00:00-07:59 (GMT+7)');
     error.statusCode = 400;
     throw error;
   }
 
-  // C1: separated OT only supports today's date.
-  if (otMode === 'SEPARATED' && date !== todayKey) {
-    const error = new Error('SEPARATED OT chỉ hỗ trợ cho ngày hiện tại (GMT+7)');
-    error.statusCode = 400;
-    throw error;
-  }
+  const date = (isCarryOverSeparated || isTomorrowPreRegisteredSeparated)
+    ? getPreviousDateKey(inputDate)
+    : inputDate;
 
   // ========== P1-2 FIX START ==========
   // Validation 1.5: Same-day retroactive check (STRICT policy)
   // Policy: OT must be requested BEFORE the estimated end time
   // Rationale: Prevent retroactive OT recording abuse
-  if (date === todayKey) {
+  if (inputDate === todayKey) {
     const now = Date.now();
     if (endTime.getTime() <= now) {
       const error = new Error(
@@ -173,28 +206,6 @@ export const createOtRequest = async (userId, requestData) => {
   }
   // ========== P1-2 FIX END ==========
 
-  // Validation 2: estimatedEndTime must be on request date or next day only
-  const estimatedDateKey = getDateKey(endTime);
-  const nextDateKey = getNextDateKey(date);
-  const isCrossMidnight = estimatedDateKey === nextDateKey;
-
-  if (estimatedDateKey !== date && !isCrossMidnight) {
-    const error = new Error('estimatedEndTime must be on request date or the immediate next day');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  // Validation 2.1: next-day end time must be before 08:00 (anti-bypass)
-  if (isCrossMidnight) {
-    const endTimeKey = getTimeKeyInGmt7(endTime);
-    if (endTimeKey >= OT_CROSS_MIDNIGHT_CUTOFF) {
-      const error = new Error('Cross-midnight OT only supports next-day end time from 00:00 to 07:59 (GMT+7)');
-      error.statusCode = 400;
-      throw error;
-    }
-  }
-
-  // Mode-specific validations before auto-extend/update.
   const existingAttendance = await Attendance.findOne({ userId, date })
     .select(
       'checkInAt checkOutAt scheduleType scheduledStartMinutes scheduledEndMinutes ' +
@@ -211,38 +222,183 @@ export const createOtRequest = async (userId, requestData) => {
   const earliestContinuousEndMinutes = getEarliestContinuousOtEndMinutes(effectiveScheduleType, 30) ?? (18 * 60);
   const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:00';
   const isWorkday = await isWorkdayDate(date);
+  const isFlexibleWorkday = isWorkday && isFlexibleScheduleType(effectiveScheduleType);
+  const isPastInputDate = inputDate < todayKey;
+  const isPastDateWithinCurrentMonth = isWithinCurrentMonthPastWindow(inputDate, todayKey);
+  const isPastFixedShiftDate =
+    isPastDateWithinCurrentMonth &&
+    !isFlexibleWorkday &&
+    isFixedShiftScheduleType(effectiveScheduleType);
+  let effectiveEndTime = endTime;
 
-  if (isWorkday && isFlexibleScheduleType(effectiveScheduleType)) {
-    const error = new Error('Không thể tạo OT cho lịch Linh hoạt vào ngày làm việc');
+  if (otMode === 'CONTINUOUS' && isPastFixedShiftDate) {
+    if (!existingAttendance?.checkInAt || !existingAttendance?.checkOutAt) {
+      const error = new Error('Ngày quá khứ của Ca 1/Ca 2 phải có attendance đã hoàn tất trước khi đăng ký OT');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const actualCheckoutAt = new Date(existingAttendance.checkOutAt);
+    if (isNaN(actualCheckoutAt.getTime())) {
+      const error = new Error('Không đọc được giờ check-out thực tế của attendance để đăng ký OT quá khứ');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const actualCheckoutDateKey = getDateKey(actualCheckoutAt);
+    const fixedShiftNextDateKey = getNextDateKey(date);
+    const actualCheckoutIsCrossMidnight = actualCheckoutDateKey === fixedShiftNextDateKey;
+    if (actualCheckoutDateKey !== date && !actualCheckoutIsCrossMidnight) {
+      const error = new Error('Attendance quá khứ của Ca 1/Ca 2 có giờ check-out không hợp lệ để đăng ký OT');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (actualCheckoutIsCrossMidnight && getTimeKeyInGmt7(actualCheckoutAt) >= OT_CROSS_MIDNIGHT_CUTOFF) {
+      const error = new Error('OT quá khứ liên tục của Ca 1/Ca 2 không hỗ trợ attendance check-out từ 08:00 trở đi của ngày hôm sau (GMT+7)');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    effectiveEndTime = actualCheckoutAt;
+  }
+
+  // Validation 2: estimatedEndTime must be on request date or next day only
+  const estimatedDateKey = getDateKey(effectiveEndTime);
+  const nextDateKey = getNextDateKey(date);
+  const isCrossMidnight = estimatedDateKey === nextDateKey;
+
+  if (estimatedDateKey !== date && !isCrossMidnight) {
+    const error = new Error('estimatedEndTime must be on request date or the immediate next day');
     error.statusCode = 400;
     throw error;
   }
 
-  if (otMode === 'CONTINUOUS') {
-    // Validation 3: same-day end time must not be before shift end
-    if (!isCrossMidnight && (!thresholdTime || endTime < thresholdTime)) {
-      const error = new Error(`OT cannot end before ${thresholdLabel}. Please adjust your estimated end time.`);
+  // Validation 2.1: next-day end time must be before 08:00 (anti-bypass)
+  if (isCrossMidnight) {
+    const endTimeKey = getTimeKeyInGmt7(effectiveEndTime);
+    if (endTimeKey >= OT_CROSS_MIDNIGHT_CUTOFF) {
+      const error = new Error('Cross-midnight OT only supports next-day end time from 00:00 to 07:59 (GMT+7)');
       error.statusCode = 400;
       throw error;
     }
+  }
 
-    // Validation 4: Minimum 30 minutes OT (B1) from shift threshold
-    const estimatedOtMinutes = thresholdTime
-      ? Math.floor((endTime.getTime() - thresholdTime.getTime()) / (1000 * 60))
-      : 0;
-    if (estimatedOtMinutes < 30) {
+  if (isPastInputDate && isFlexibleWorkday && !isPastDateWithinCurrentMonth) {
+    const error = new Error('OT cho lịch Linh hoạt chỉ hỗ trợ đăng ký quá khứ trong tháng hiện tại (GMT+7)');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (isPastInputDate && !isFlexibleWorkday && !isPastDateWithinCurrentMonth) {
+    const error = new Error('Cannot create OT request for past dates');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (isPastInputDate && !isFlexibleWorkday && isPastDateWithinCurrentMonth && !isPastFixedShiftDate) {
+    const error = new Error('OT quá khứ trong tháng hiện tại hiện chỉ hỗ trợ cho Ca 1, Ca 2 hoặc ngày có lịch Linh hoạt');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (otMode === 'SEPARATED') {
+    const isFlexiblePastSeparated = isFlexibleWorkday && isPastDateWithinCurrentMonth;
+    const isFixedPastSeparated = isPastFixedShiftDate;
+    const supportsSeparatedDate =
+      inputDate === todayKey ||
+      inputDate === tomorrowKey ||
+      isFlexiblePastSeparated ||
+      isFixedPastSeparated;
+
+    if (!supportsSeparatedDate) {
       const error = new Error(
-        `Minimum OT duration is 30 minutes (earliest valid end: ${earliestContinuousEndLabel})`
+        isFlexibleWorkday
+          ? 'SEPARATED OT cho lịch Linh hoạt chỉ hỗ trợ ngày hiện tại, quá khứ trong tháng hiện tại hoặc phiên rạng sáng ngày mai (GMT+7)'
+          : 'SEPARATED OT chỉ hỗ trợ ngày hiện tại, quá khứ trong tháng hiện tại của Ca 1/Ca 2 hoặc phiên rạng sáng ngày mai (GMT+7)'
       );
       error.statusCode = 400;
       throw error;
     }
+  }
 
-    // Legacy continuous rule: request must be before checkout.
-    if (existingAttendance?.checkOutAt) {
-      const error = new Error('Cannot request OT after checkout. OT must be requested before checking out.');
-      error.statusCode = 400;
-      throw error;
+  if (otMode === 'CONTINUOUS') {
+    if (isFlexibleWorkday) {
+      if (!startTime) {
+        const error = new Error('otStartTime is required for CONTINUOUS OT on FLEXIBLE schedule');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const startDateKey = getDateKey(startTime);
+      if (startDateKey !== date) {
+        const error = new Error('CONTINUOUS OT cho lịch Linh hoạt yêu cầu otStartTime nằm trên đúng ngày làm việc');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (effectiveEndTime <= startTime) {
+        const error = new Error('estimatedEndTime must be after otStartTime');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const explicitMinutes = Math.floor((effectiveEndTime.getTime() - startTime.getTime()) / (1000 * 60));
+      if (explicitMinutes < OT_MIN_DURATION_MINUTES) {
+        const error = new Error('Minimum OT duration is 30 minutes');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (existingAttendance?.checkInAt) {
+        const actualCheckInAt = new Date(existingAttendance.checkInAt);
+        if (!isNaN(actualCheckInAt.getTime()) && startTime < actualCheckInAt) {
+          const error = new Error('otStartTime không thể trước thời điểm check-in thực tế');
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+
+      if (existingAttendance?.checkOutAt) {
+        const actualCheckOutAt = new Date(existingAttendance.checkOutAt);
+        if (!isNaN(actualCheckOutAt.getTime()) && startTime >= actualCheckOutAt) {
+          const error = new Error('otStartTime phải trước thời điểm check-out thực tế');
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+
+      if (isPastInputDate && (!existingAttendance?.checkInAt || !existingAttendance?.checkOutAt)) {
+        const error = new Error('Ngày quá khứ của lịch Linh hoạt phải có attendance đã hoàn tất trước khi đăng ký OT');
+        error.statusCode = 400;
+        throw error;
+      }
+    } else {
+    // Validation 3: same-day end time must not be before shift end
+      if (!isCrossMidnight && (!thresholdTime || effectiveEndTime < thresholdTime)) {
+        const error = new Error(`OT cannot end before ${thresholdLabel}. Please adjust your estimated end time.`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Validation 4: Minimum 30 minutes OT (B1) from shift threshold
+      const estimatedOtMinutes = thresholdTime
+        ? Math.floor((effectiveEndTime.getTime() - thresholdTime.getTime()) / (1000 * 60))
+        : 0;
+      if (estimatedOtMinutes < 30) {
+        const error = new Error(
+          `Minimum OT duration is 30 minutes (earliest valid end: ${earliestContinuousEndLabel})`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Legacy continuous rule: request must be before checkout.
+      if (!isPastFixedShiftDate && existingAttendance?.checkOutAt) {
+        const error = new Error('Cannot request OT after checkout. OT must be requested before checking out.');
+        error.statusCode = 400;
+        throw error;
+      }
     }
   } else {
     // SEPARATED validations
@@ -252,24 +408,24 @@ export const createOtRequest = async (userId, requestData) => {
       throw error;
     }
 
-    const startDateKey = getDateKey(startTime);
-    const startIsCrossMidnight = startDateKey === nextDateKey;
+	    const startDateKey = getDateKey(startTime);
+	    const startIsCrossMidnight = startDateKey === nextDateKey;
     if (startDateKey !== date && !startIsCrossMidnight) {
       const error = new Error('otStartTime must be on request date or the immediate next day');
       error.statusCode = 400;
       throw error;
     }
 
-    if (startIsCrossMidnight) {
-      const startTimeKey = getTimeKeyInGmt7(startTime);
-      if (startTimeKey >= OT_CROSS_MIDNIGHT_CUTOFF) {
-        const error = new Error('Cross-midnight OT start time must be from 00:00 to 07:59 (GMT+7)');
-        error.statusCode = 400;
-        throw error;
-      }
-    }
+	    if (startIsCrossMidnight) {
+	      const startTimeKey = getTimeKeyInGmt7(startTime);
+	      if (startTimeKey >= OT_CROSS_MIDNIGHT_CUTOFF) {
+	        const error = new Error('Cross-midnight OT start time must be from 00:00 to 07:59 (GMT+7)');
+	        error.statusCode = 400;
+	        throw error;
+	      }
+	    }
 
-    if (!thresholdTime || startTime < thresholdTime) {
+    if (!isFlexibleWorkday && (!thresholdTime || startTime < thresholdTime)) {
       const error = new Error(`otStartTime must be at or after ${thresholdLabel} (GMT+7)`);
       error.statusCode = 400;
       throw error;
@@ -296,6 +452,11 @@ export const createOtRequest = async (userId, requestData) => {
 
     if (startTime <= new Date(existingAttendance.checkOutAt)) {
       const error = new Error('otStartTime phải sau thời điểm check-out ca chính');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (isPastInputDate && !isPastDateWithinCurrentMonth && isFlexibleWorkday) {
+      const error = new Error('OT tách rời cho lịch Linh hoạt chỉ hỗ trợ ngày quá khứ trong tháng hiện tại (GMT+7)');
       error.statusCode = 400;
       throw error;
     }
@@ -329,10 +490,10 @@ export const createOtRequest = async (userId, requestData) => {
     },
     {
       $set: {
-        estimatedEndTime: endTime,
+        estimatedEndTime: effectiveEndTime,
         reason: trimmedReason,
         otMode,
-        otStartTime: otMode === 'SEPARATED' ? startTime : null,
+        otStartTime: (otMode === 'SEPARATED' || isFlexibleWorkday) ? startTime : null,
         isOtSlotActive: true
       }
     },
@@ -344,7 +505,7 @@ export const createOtRequest = async (userId, requestData) => {
     return existingRequest;
   }
 
-  if (otMode === 'CONTINUOUS') {
+  if (otMode === 'CONTINUOUS' && !isFlexibleWorkday && !isPastFixedShiftDate) {
     const alreadyCheckedOut = await Attendance.exists({
       userId,
       date,
@@ -377,9 +538,9 @@ export const createOtRequest = async (userId, requestData) => {
       userId,
       type: 'OT_REQUEST',
       date,
-      estimatedEndTime: endTime,
+      estimatedEndTime: effectiveEndTime,
       otMode,
-      otStartTime: otMode === 'SEPARATED' ? startTime : null,
+      otStartTime: (otMode === 'SEPARATED' || isFlexibleWorkday) ? startTime : null,
       isOtSlotActive: true,
       reason: trimmedReason,
       status: 'PENDING'

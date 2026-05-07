@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Table, Badge, Pagination, Button } from 'flowbite-react';
 import { cancelOtRequest } from '../../api/requestApi';
-import { addDaysToDate, getVnDateString } from '../../utils/dateDisplay';
+import { addDaysToDate, getOtRequestDateMeta, getVnDateString } from '../../utils/dateDisplay';
 
 /**
  * Table displaying user's requests with pagination.
@@ -185,18 +185,47 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
         return '—';
     };
 
+    const renderRequestDateCell = (request) => {
+        if (request?.type === 'LEAVE') {
+            return (
+                <span>
+                    {formatDate(request.leaveStartDate)} → {formatDate(request.leaveEndDate)}
+                </span>
+            );
+        }
+
+        if (request?.type !== 'OT_REQUEST') {
+            return formatDate(request?.date);
+        }
+
+        const { actualDate, anchorDate, isSeparatedCarryOver } = getOtRequestDateMeta(request);
+        if (!isSeparatedCarryOver) {
+            return formatDate(anchorDate);
+        }
+
+        return (
+            <div className="flex flex-col gap-1">
+                <span>{formatDate(actualDate)}</span>
+                <span className="text-xs text-gray-500">Neo ca: {formatDate(anchorDate)}</span>
+            </div>
+        );
+    };
+
     /**
      * Handle OT cancellation
      */
-    const handleCancelOt = async (requestId, date) => {
-        const confirmMsg = `Bạn có chắc muốn hủy yêu cầu OT ngày ${formatDate(date)}?`;
+    const handleCancelOt = async (request) => {
+        const { actualDate, anchorDate, isSeparatedCarryOver } = getOtRequestDateMeta(request);
+        const confirmMsg = isSeparatedCarryOver
+            ? `Bạn có chắc muốn hủy yêu cầu OT rạng sáng ngày ${formatDate(actualDate)} (neo ca ${formatDate(anchorDate)})?`
+            : `Bạn có chắc muốn hủy yêu cầu OT ngày ${formatDate(anchorDate || request?.date)}?`;
         
         if (!window.confirm(confirmMsg)) return;
         
-        setCancelLoading(requestId);
+        setCancelLoading(request._id);
         
         try {
-            await cancelOtRequest(requestId);
+            await cancelOtRequest(request._id);
             alert('✅ Đã hủy yêu cầu OT');
             
             // Trigger refetch
@@ -245,13 +274,7 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
 
                                             {/* Date / Range */}
                                             <Table.Cell className="font-medium whitespace-nowrap">
-                                                {req.type === 'LEAVE' ? (
-                                                    <span>
-                                                        {formatDate(req.leaveStartDate)} → {formatDate(req.leaveEndDate)}
-                                                    </span>
-                                                ) : (
-                                                    formatDate(req.date)
-                                                )}
+                                                {renderRequestDateCell(req)}
                                             </Table.Cell>
 
                                             {/* Details (Time or Leave Type + Days or OT Info) */}
@@ -287,7 +310,7 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
                                                                 <Button
                                                                     size="xs"
                                                                     color="failure"
-                                                                    onClick={() => handleCancelOt(req._id, req.date)}
+                                                                    onClick={() => handleCancelOt(req)}
                                                                     disabled={cancelLoading === req._id}
                                                                 >
                                                                     {cancelLoading === req._id ? '...' : '🗑️ Hủy'}

@@ -52,25 +52,25 @@ beforeAll(async () => {
         {
             userId: employee._id,
             date: '2026-02-03',
-            checkInAt: new Date('2026-02-03T01:30:00Z'), // 08:30 GMT+7
+            checkInAt: new Date('2026-02-03T01:30:00Z'), // 08:30 GMT+7, default SHIFT_1 late 30m
             checkOutAt: new Date('2026-02-03T10:30:00Z') // 17:30 GMT+7
         },
         {
             userId: employee._id,
             date: '2026-02-05',
-            checkInAt: new Date('2026-02-05T02:00:00Z'), // 09:00 GMT+7 (late 15m)
+            checkInAt: new Date('2026-02-05T02:00:00Z'), // 09:00 GMT+7, default SHIFT_1 late 60m
             checkOutAt: new Date('2026-02-05T10:30:00Z')
         },
         {
             userId: employee._id,
             date: '2026-02-06',
-            checkInAt: new Date('2026-02-06T01:30:00Z'), // 08:30 GMT+7
+            checkInAt: new Date('2026-02-06T01:30:00Z'), // 08:30 GMT+7, default SHIFT_1 late 30m
             checkOutAt: new Date('2026-02-06T10:00:00Z') // 17:00 GMT+7 (early leave)
         },
         {
             userId: employee._id,
             date: '2026-02-10',
-            checkInAt: new Date('2026-02-10T02:10:00Z'), // 09:10 GMT+7 (late 25m)
+            checkInAt: new Date('2026-02-10T02:10:00Z'), // 09:10 GMT+7, default SHIFT_1 late 70m
             checkOutAt: new Date('2026-02-10T10:00:00Z') // 17:00 GMT+7 (early leave)
         }
     ]);
@@ -131,11 +131,11 @@ describe('Monthly Report Enhanced Summary', () => {
             UNPAID: 0,
             UNSPECIFIED: 0
         });
-        expect(row.totalLateCount).toBe(2);
-        expect(row.totalLateMinutes).toBe(40);
+        expect(row.totalLateCount).toBe(4);
+        expect(row.totalLateMinutes).toBe(190);
         expect(row.earlyLeaveCount).toBe(2);
         expect(Array.isArray(row.lateDetails)).toBe(true);
-        expect(row.lateDetails.length).toBe(2);
+        expect(row.lateDetails.length).toBe(4);
     });
 
     it('computes absentDays using elapsed workdays set-difference', async () => {
@@ -163,14 +163,24 @@ describe('Monthly Report Enhanced Summary', () => {
         expect(row).toBeDefined();
 
         expect(row.lateDetails[0]).toEqual({
-            date: '2026-02-05',
-            checkInTime: '09:00',
-            lateMinutes: 15
+            date: '2026-02-03',
+            checkInTime: '08:30',
+            lateMinutes: 30
         });
         expect(row.lateDetails[1]).toEqual({
+            date: '2026-02-05',
+            checkInTime: '09:00',
+            lateMinutes: 60
+        });
+        expect(row.lateDetails[2]).toEqual({
+            date: '2026-02-06',
+            checkInTime: '08:30',
+            lateMinutes: 30
+        });
+        expect(row.lateDetails[3]).toEqual({
             date: '2026-02-10',
             checkInTime: '09:10',
-            lateMinutes: 25
+            lateMinutes: 70
         });
     });
 

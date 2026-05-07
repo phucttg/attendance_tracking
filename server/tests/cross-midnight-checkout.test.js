@@ -34,6 +34,7 @@ import app from '../src/app.js';
 import User from '../src/models/User.js';
 import Attendance from '../src/models/Attendance.js';
 import AuditLog from '../src/models/AuditLog.js';
+import WorkScheduleRegistration from '../src/models/WorkScheduleRegistration.js';
 import { getDateKey } from '../src/utils/dateUtils.js';
 import { getCheckoutGraceMs } from '../src/utils/graceConfig.js';
 
@@ -45,6 +46,14 @@ let graceMs;
 
 // Fixed time for all tests: 2026-01-28 10:00 GMT+7
 const FIXED_TIME = new Date('2026-01-28T03:00:00.000Z'); // 10:00 GMT+7
+
+async function ensureTodayScheduleForEmployee(scheduleType = 'SHIFT_1') {
+    await WorkScheduleRegistration.updateOne(
+        { userId: employeeId, workDate: getDateKey(new Date()) },
+        { $set: { scheduleType }, $setOnInsert: { lockedAt: new Date() } },
+        { upsert: true }
+    );
+}
 
 beforeAll(async () => {
     // STEP 1: Freeze time to prevent date boundary issues
@@ -61,6 +70,7 @@ beforeAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await AuditLog.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
 
     // STEP 4: Create test users
     const passwordHash = await bcrypt.hash('password123', 10);
@@ -112,6 +122,7 @@ afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await AuditLog.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
 
     // STEP 3: Close connection
     await mongoose.connection.close();
@@ -121,6 +132,7 @@ beforeEach(async () => {
     // Clean data before each test (isolation)
     await Attendance.deleteMany({});
     await AuditLog.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
 });
 
 // ============================================================================
@@ -165,10 +177,13 @@ describe('Suite 1: Same-Day Checkout (Baseline)', () => {
      * Expected: 200 OK (edge case: 0-minute session)
      */
     it('should allow immediate checkout', async () => {
+        await ensureTodayScheduleForEmployee();
+
         // Check-in via API
-        await request(app)
+        const checkInRes = await request(app)
             .post('/api/attendance/check-in')
             .set('Authorization', `Bearer ${employeeToken}`);
+        expect(checkInRes.status).toBe(200);
 
         // Checkout immediately
         const res = await request(app)

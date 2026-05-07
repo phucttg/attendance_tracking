@@ -9,13 +9,17 @@ import teamRoutes from './routes/teamRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import workScheduleRoutes from './routes/workScheduleRoutes.js';
+import {
+  globalApiLimiter,
+  parseTrustProxy
+} from './middlewares/rateLimitMiddleware.js';
 
 const app = express();
 
+app.set('trust proxy', parseTrustProxy());
+
 // Enable CORS so frontend (different port/domain) can call this API
 app.use(cors());
-// Parse incoming JSON request body automatically
-app.use(express.json());
 
 // Health check endpoint - used to verify server is alive (useful for deployment/monitoring)
 app.get('/api/health', (req, res) => {
@@ -25,6 +29,11 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+app.use('/api', globalApiLimiter);
+
+// Parse incoming JSON request body automatically
+app.use(express.json());
 
 // === API Routes ===
 app.use('/api/auth', authRoutes);

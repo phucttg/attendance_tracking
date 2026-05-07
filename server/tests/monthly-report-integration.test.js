@@ -322,19 +322,19 @@ describe('Integration: Full Data Flow Validation', () => {
             {
                 userId: employee1._id,
                 date: '2026-02-03',
-                checkInAt: new Date('2026-02-03T01:30:00Z'),
+                checkInAt: new Date('2026-02-03T01:30:00Z'), // Default SHIFT_1: 08:30 GMT+7, late 30m
                 checkOutAt: new Date('2026-02-03T10:30:00Z')
             },
             {
                 userId: employee1._id,
                 date: '2026-02-05',
-                checkInAt: new Date('2026-02-05T02:00:00Z'), // Late 15m
+                checkInAt: new Date('2026-02-05T02:00:00Z'), // Default SHIFT_1: 09:00 GMT+7, late 60m
                 checkOutAt: new Date('2026-02-05T10:30:00Z')
             },
             {
                 userId: employee1._id,
                 date: '2026-02-10',
-                checkInAt: new Date('2026-02-10T01:30:00Z'),
+                checkInAt: new Date('2026-02-10T01:30:00Z'), // Default SHIFT_1: 08:30 GMT+7, late 30m
                 checkOutAt: new Date('2026-02-10T10:00:00Z') // Early leave
             }
         ]);
@@ -362,12 +362,26 @@ describe('Integration: Full Data Flow Validation', () => {
         // Validate all fields
         expect(row.presentDays).toBe(3);
         expect(row.leaveDays).toBe(2);
-        expect(row.totalLateCount).toBe(1);
-        expect(row.totalLateMinutes).toBe(15);
+        expect(row.totalLateCount).toBe(3);
+        expect(row.totalLateMinutes).toBe(120);
         expect(row.earlyLeaveCount).toBe(1);
         expect(row.leaveByType.ANNUAL).toBe(2);
-        expect(row.lateDetails).toHaveLength(1);
-        expect(row.lateDetails[0].date).toBe('2026-02-05');
+        expect(row.lateDetails).toHaveLength(3);
+        expect(row.lateDetails[0]).toEqual({
+            date: '2026-02-03',
+            checkInTime: '08:30',
+            lateMinutes: 30
+        });
+        expect(row.lateDetails[1]).toEqual({
+            date: '2026-02-05',
+            checkInTime: '09:00',
+            lateMinutes: 60
+        });
+        expect(row.lateDetails[2]).toEqual({
+            date: '2026-02-10',
+            checkInTime: '08:30',
+            lateMinutes: 30
+        });
         expect(row.user.teamName).toBe('Engineering Team');
     });
 

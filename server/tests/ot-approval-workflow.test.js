@@ -23,10 +23,11 @@ import Request from '../src/models/Request.js';
 import Attendance from '../src/models/Attendance.js';
 import Team from '../src/models/Team.js';
 import WorkScheduleRegistration from '../src/models/WorkScheduleRegistration.js';
-import { getTodayDateKey } from '../src/utils/dateUtils.js';
 
 const FIXED_TIME = new Date('2026-02-10T03:00:00.000Z'); // Tue 10:00 GMT+7
 const TODAY = '2026-02-10';
+const PREVIOUS_DAY = '2026-02-09';
+const NEXT_DAY = '2026-02-11';
 const PASSWORD = 'Password123!';
 
 describe('OT Approval Workflow Integration', () => {
@@ -152,6 +153,40 @@ describe('OT Approval Workflow Integration', () => {
         estimatedEndTime: endTime,
         reason
       });
+  }
+
+  async function createFlexibleContinuousOtReq(
+    date = PREVIOUS_DAY,
+    startTime = `${PREVIOUS_DAY}T18:00:00+07:00`,
+    endTime = `${PREVIOUS_DAY}T20:00:00+07:00`,
+    reason = 'Flexible continuous OT'
+  ) {
+    return request(app)
+      .post('/api/requests')
+      .set('Authorization', `Bearer ${employeeToken}`)
+      .send({
+        type: 'OT_REQUEST',
+        date,
+        otMode: 'CONTINUOUS',
+        otStartTime: startTime,
+        estimatedEndTime: endTime,
+        reason
+      });
+  }
+
+  async function seedCompletedAttendance({
+    date = PREVIOUS_DAY,
+    checkInAt = `${date}T08:00:00+07:00`,
+    checkOutAt = `${date}T17:30:00+07:00`,
+    scheduleType = 'SHIFT_1'
+  } = {}) {
+    return Attendance.create({
+      userId: employeeId,
+      date,
+      checkInAt: new Date(checkInAt),
+      checkOutAt: new Date(checkOutAt),
+      scheduleType
+    });
   }
 
   async function checkIn(token = employeeToken) {
@@ -282,6 +317,473 @@ describe('OT Approval Workflow Integration', () => {
       expect(attendance.otApproved).toBe(true);
       expect(attendance.otMode).toBe('SEPARATED');
       expect(attendance.separatedOtMinutes).toBe(120);
+    });
+  });
+
+  describe('Separated carry-over OT 00:00-07:59', () => {
+    it('should allow pre-registering separated OT for D+1 after the D attendance has checked out', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z')); // 2026-02-09 23:00 GMT+7
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Pre-register D+1 separated OT'
+      );
+
+      expect(createRes.status).toBe(201);
+      expect(createRes.body.request.otMode).toBe('SEPARATED');
+      expect(createRes.body.request.status).toBe('PENDING');
+      expect(createRes.body.request.date).toBe(PREVIOUS_DAY);
+      expect(new Date(createRes.body.request.otStartTime).toISOString()).toBe('2026-02-09T18:30:00.000Z');
+      expect(new Date(createRes.body.request.estimatedEndTime).toISOString()).toBe('2026-02-09T22:00:00.000Z');
+    });
+
+    it('should approve pre-registered separated OT for D+1 and write separatedOtMinutes onto D attendance', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Pre-register approval'
+      );
+      expect(createRes.status).toBe(201);
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(approveRes.status).toBe(200);
+      expect(approveRes.body.request.status).toBe('APPROVED');
+
+      const attendance = await Attendance.findOne({ userId: employeeId, date: PREVIOUS_DAY }).lean();
+      expect(attendance.otApproved).toBe(true);
+      expect(attendance.otMode).toBe('SEPARATED');
+      expect(attendance.separatedOtMinutes).toBe(210);
+    });
+
+    it('should reject pre-registering separated OT for D+1 before D attendance has checked out', async () => {
+      await Attendance.create({
+        userId: employeeId,
+        date: PREVIOUS_DAY,
+        checkInAt: new Date(`${PREVIOUS_DAY}T08:00:00+07:00`),
+        scheduleType: 'SHIFT_1'
+      });
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Pre-register before checkout'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('Phải hoàn tất ca chính');
+    });
+
+    it('should reject pre-registering separated OT for a date later than D+1', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        NEXT_DAY,
+        `${NEXT_DAY}T01:30:00+07:00`,
+        `${NEXT_DAY}T05:00:00+07:00`,
+        'Too far in advance'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('ngày mai');
+    });
+
+    it('should reject pre-registering separated OT for D+1 when the time range is not inside 00:00-07:59', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T08:00:00+07:00`,
+        `${TODAY}T09:00:00+07:00`,
+        'Invalid D+1 time range'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('00:00-07:59');
+    });
+
+    it('should allow pre-registering separated OT at 23:59 with boundary times 00:00 and 07:59', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:59:00.000Z')); // 2026-02-09 23:59 GMT+7
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T00:00:00+07:00`,
+        `${TODAY}T07:59:00+07:00`,
+        'Boundary pre-register'
+      );
+
+      expect(createRes.status).toBe(201);
+      expect(createRes.body.request.date).toBe(PREVIOUS_DAY);
+      expect(new Date(createRes.body.request.otStartTime).toISOString()).toBe('2026-02-09T17:00:00.000Z');
+      expect(new Date(createRes.body.request.estimatedEndTime).toISOString()).toBe('2026-02-10T00:59:00.000Z');
+    });
+
+    it('should allow same-morning carry-over right before 08:00 with end time at 07:59', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-10T00:58:59.000Z')); // 2026-02-10 07:58:59 GMT+7
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T00:00:00+07:00`,
+        `${TODAY}T07:59:00+07:00`,
+        'Boundary same-morning carry-over'
+      );
+
+      expect(createRes.status).toBe(201);
+      expect(createRes.body.request.date).toBe(PREVIOUS_DAY);
+    });
+
+    it('should reject pre-registering separated OT for D+1 when only one time is inside 00:00-07:59', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T08:00:00+07:00`,
+        'Partial boundary mismatch'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('00:00-07:59');
+    });
+
+    it('should reject pre-registering separated OT for D+1 when estimatedEndTime is not after otStartTime', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T05:00:00+07:00`,
+        `${TODAY}T04:00:00+07:00`,
+        'End before start'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('after otStartTime');
+    });
+
+    it('should reject pre-registering separated OT for D+1 when duration is shorter than 30 minutes', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T01:45:00+07:00`,
+        'Too short separated OT'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('30 minutes');
+    });
+
+    it('should create separated carry-over OT anchored to the previous attendance date', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T18:40:00.000Z')); // 2026-02-10 01:40 GMT+7
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Carry-over separated OT'
+      );
+
+      expect(createRes.status).toBe(201);
+      expect(createRes.body.request.otMode).toBe('SEPARATED');
+      expect(createRes.body.request.status).toBe('PENDING');
+      expect(createRes.body.request.date).toBe(PREVIOUS_DAY);
+      expect(new Date(createRes.body.request.otStartTime).toISOString()).toBe('2026-02-09T18:30:00.000Z');
+      expect(new Date(createRes.body.request.estimatedEndTime).toISOString()).toBe('2026-02-09T22:00:00.000Z');
+    });
+
+    it('should approve separated carry-over OT and write separatedOtMinutes onto previous-day attendance', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T18:40:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Carry-over approval'
+      );
+      expect(createRes.status).toBe(201);
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(approveRes.status).toBe(200);
+      expect(approveRes.body.request.status).toBe('APPROVED');
+
+      const attendance = await Attendance.findOne({ userId: employeeId, date: PREVIOUS_DAY }).lean();
+      expect(attendance.otApproved).toBe(true);
+      expect(attendance.otMode).toBe('SEPARATED');
+      expect(attendance.separatedOtMinutes).toBe(210);
+    });
+
+    it('should reject carry-over creation when previous-day attendance is missing', async () => {
+      vi.setSystemTime(new Date('2026-02-09T18:40:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Missing anchor attendance'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('Phải hoàn tất ca chính');
+    });
+
+    it('should reject carry-over creation when previous-day attendance has no checkout', async () => {
+      await Attendance.create({
+        userId: employeeId,
+        date: PREVIOUS_DAY,
+        checkInAt: new Date(`${PREVIOUS_DAY}T08:00:00+07:00`),
+        scheduleType: 'SHIFT_1'
+      });
+
+      vi.setSystemTime(new Date('2026-02-09T18:40:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Missing checkout anchor'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('Phải hoàn tất ca chính');
+    });
+
+    it('should allow carry-over creation for FLEXIBLE previous-day schedule after checkout', async () => {
+      await seedCompletedAttendance({ scheduleType: 'FLEXIBLE' });
+
+      vi.setSystemTime(new Date('2026-02-09T18:40:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Flexible carry-over'
+      );
+
+      expect(createRes.status).toBe(201);
+      expect(createRes.body.request.date).toBe(PREVIOUS_DAY);
+      expect(createRes.body.request.otMode).toBe('SEPARATED');
+    });
+
+    it('should reject carry-over creation when otStartTime is not after previous-day checkout', async () => {
+      await seedCompletedAttendance({
+        checkOutAt: `${TODAY}T02:00:00+07:00`
+      });
+
+      vi.setSystemTime(new Date('2026-02-09T18:40:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Start before anchor checkout'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('check-out');
+    });
+
+    it('should reject carry-over creation after 08:00 even when timestamps are inside 00:00-07:59', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-10T01:10:00.000Z')); // 2026-02-10 08:10 GMT+7
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Late carry-over request'
+      );
+
+      expect(createRes.status).toBe(400);
+      expect(createRes.body.message).toContain('past time');
+    });
+  });
+
+  describe('Flexible schedule OT', () => {
+    it('should approve past-month flexible continuous OT and snapshot explicit OT window on attendance', async () => {
+      await seedCompletedAttendance({
+        date: PREVIOUS_DAY,
+        checkOutAt: `${PREVIOUS_DAY}T19:30:00+07:00`,
+        scheduleType: 'FLEXIBLE'
+      });
+
+      const createRes = await createFlexibleContinuousOtReq(
+        PREVIOUS_DAY,
+        `${PREVIOUS_DAY}T18:00:00+07:00`,
+        `${PREVIOUS_DAY}T22:00:00+07:00`,
+        'Flexible continuous past day'
+      );
+      expect(createRes.status).toBe(201);
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      expect(approveRes.status).toBe(200);
+
+      const attendance = await Attendance.findOne({ userId: employeeId, date: PREVIOUS_DAY }).lean();
+      expect(attendance.otApproved).toBe(true);
+      expect(attendance.otMode).toBe('CONTINUOUS');
+      expect(attendance.separatedOtMinutes).toBeNull();
+      expect(new Date(attendance.approvedOtStartTime).toISOString()).toBe('2026-02-09T11:00:00.000Z');
+      expect(new Date(attendance.approvedOtEndTime).toISOString()).toBe('2026-02-09T15:00:00.000Z');
+    });
+
+    it('should auto-rehydrate approved flexible continuous OT snapshot on future check-in', async () => {
+      await WorkScheduleRegistration.create({
+        userId: employeeId,
+        workDate: NEXT_DAY,
+        scheduleType: 'FLEXIBLE'
+      });
+
+      const createRes = await createFlexibleContinuousOtReq(
+        NEXT_DAY,
+        `${NEXT_DAY}T18:00:00+07:00`,
+        `${NEXT_DAY}T22:00:00+07:00`,
+        'Flexible continuous future day'
+      );
+      expect(createRes.status).toBe(201);
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      expect(approveRes.status).toBe(200);
+
+      vi.setSystemTime(new Date('2026-02-11T02:00:00.000Z')); // 09:00 GMT+7
+      const checkInRes = await checkIn();
+      expect(checkInRes.status).toBe(200);
+
+      const attendance = await Attendance.findOne({ userId: employeeId, date: NEXT_DAY }).lean();
+      expect(attendance.otApproved).toBe(true);
+      expect(attendance.otMode).toBe('CONTINUOUS');
+      expect(new Date(attendance.approvedOtStartTime).toISOString()).toBe('2026-02-11T11:00:00.000Z');
+      expect(new Date(attendance.approvedOtEndTime).toISOString()).toBe('2026-02-11T15:00:00.000Z');
+    });
+
+    it('should approve past-month flexible separated OT and write separatedOtMinutes immediately', async () => {
+      await seedCompletedAttendance({
+        date: PREVIOUS_DAY,
+        scheduleType: 'FLEXIBLE'
+      });
+
+      const createRes = await createSeparatedOtReq(
+        PREVIOUS_DAY,
+        `${PREVIOUS_DAY}T19:00:00+07:00`,
+        `${PREVIOUS_DAY}T21:30:00+07:00`,
+        'Flexible separated past day'
+      );
+      expect(createRes.status).toBe(201);
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      expect(approveRes.status).toBe(200);
+
+      const attendance = await Attendance.findOne({ userId: employeeId, date: PREVIOUS_DAY }).lean();
+      expect(attendance.otApproved).toBe(true);
+      expect(attendance.otMode).toBe('SEPARATED');
+      expect(attendance.separatedOtMinutes).toBe(150);
+      expect(attendance.approvedOtStartTime).toBeNull();
+      expect(attendance.approvedOtEndTime).toBeNull();
+    });
+  });
+
+  describe('Fixed-shift past-month OT', () => {
+    it('should approve past-month SHIFT_1 continuous OT and keep attendance compute semantics unchanged', async () => {
+      await seedCompletedAttendance({
+        date: PREVIOUS_DAY,
+        checkOutAt: `${PREVIOUS_DAY}T20:30:00+07:00`,
+        scheduleType: 'SHIFT_1'
+      });
+
+      const createRes = await createOtReq(
+        PREVIOUS_DAY,
+        `${PREVIOUS_DAY}T19:00:00+07:00`,
+        'Fixed-shift continuous past day'
+      );
+      expect(createRes.status).toBe(201);
+      expect(new Date(createRes.body.request.estimatedEndTime).toISOString()).toBe('2026-02-09T13:30:00.000Z');
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      expect(approveRes.status).toBe(200);
+
+      const attendance = await Attendance.findOne({ userId: employeeId, date: PREVIOUS_DAY }).lean();
+      expect(attendance.otApproved).toBe(true);
+      expect(attendance.otMode).toBe('CONTINUOUS');
+      expect(attendance.separatedOtMinutes).toBeNull();
+    });
+
+    it('should reject approval when fixed-shift past-day checkout changed after the request was created', async () => {
+      await seedCompletedAttendance({
+        date: PREVIOUS_DAY,
+        checkOutAt: `${PREVIOUS_DAY}T20:30:00+07:00`,
+        scheduleType: 'SHIFT_1'
+      });
+
+      const createRes = await createOtReq(
+        PREVIOUS_DAY,
+        `${PREVIOUS_DAY}T19:00:00+07:00`,
+        'Checkout changes after create'
+      );
+      expect(createRes.status).toBe(201);
+
+      await Attendance.updateOne(
+        { userId: employeeId, date: PREVIOUS_DAY },
+        { $set: { checkOutAt: new Date(`${PREVIOUS_DAY}T21:00:00+07:00`) } }
+      );
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(approveRes.status).toBe(400);
+      expect(approveRes.body.message).toContain('changed');
+    });
+
+    it('should approve past-month SHIFT_1 separated OT and apply separatedOtMinutes immediately', async () => {
+      await seedCompletedAttendance({
+        date: PREVIOUS_DAY,
+        checkOutAt: `${PREVIOUS_DAY}T18:10:00+07:00`,
+        scheduleType: 'SHIFT_1'
+      });
+
+      const createRes = await createSeparatedOtReq(
+        PREVIOUS_DAY,
+        `${PREVIOUS_DAY}T19:00:00+07:00`,
+        `${PREVIOUS_DAY}T22:00:00+07:00`,
+        'Fixed-shift separated past day'
+      );
+      expect(createRes.status).toBe(201);
+
+      const approveRes = await request(app)
+        .post(`/api/requests/${createRes.body.request._id}/approve`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      expect(approveRes.status).toBe(200);
+
+      const attendance = await Attendance.findOne({ userId: employeeId, date: PREVIOUS_DAY }).lean();
+      expect(attendance.otApproved).toBe(true);
+      expect(attendance.otMode).toBe('SEPARATED');
+      expect(attendance.separatedOtMinutes).toBe(180);
     });
   });
 
@@ -594,6 +1096,36 @@ describe('OT Approval Workflow Integration', () => {
       expect(endHour).toBe(21);
     });
 
+    it('should auto-extend separated pre-register requests using the anchor date', async () => {
+      await seedCompletedAttendance();
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const firstRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'First separated pre-register'
+      );
+      expect(firstRes.status).toBe(201);
+
+      vi.setSystemTime(new Date('2026-02-09T16:10:00.000Z'));
+      const secondRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T02:00:00+07:00`,
+        `${TODAY}T06:00:00+07:00`,
+        'Extended separated pre-register'
+      );
+      expect(secondRes.status).toBe(201);
+      expect(secondRes.body.request._id).toBe(firstRes.body.request._id);
+      expect(secondRes.body.request.date).toBe(PREVIOUS_DAY);
+
+      const req = await Request.findById(firstRes.body.request._id).lean();
+      expect(req.date).toBe(PREVIOUS_DAY);
+      expect(req.reason).toBe('Extended separated pre-register');
+      expect(new Date(req.otStartTime).toISOString()).toBe('2026-02-09T19:00:00.000Z');
+      expect(new Date(req.estimatedEndTime).toISOString()).toBe('2026-02-09T23:00:00.000Z');
+    });
+
     it('should update reason on auto-extend', async () => {
       await createOtReq(TODAY, `${TODAY}T19:00:00+07:00`, 'Original reason');
       const res2 = await createOtReq(TODAY, `${TODAY}T21:00:00+07:00`, 'Updated reason');
@@ -613,6 +1145,34 @@ describe('OT Approval Workflow Integration', () => {
 
       // Different requests
       expect(res2.body.request._id).not.toBe(res1.body.request._id);
+    });
+  });
+
+  describe('Slot Guard', () => {
+    it('should reject pre-register separated OT when an approved active slot already exists on the anchor date', async () => {
+      await seedCompletedAttendance();
+      await Request.create({
+        userId: employeeId,
+        type: 'OT_REQUEST',
+        date: PREVIOUS_DAY,
+        otMode: 'SEPARATED',
+        otStartTime: new Date(`${PREVIOUS_DAY}T12:00:00.000Z`),
+        estimatedEndTime: new Date(`${PREVIOUS_DAY}T14:00:00.000Z`),
+        reason: 'Existing approved anchor slot',
+        status: 'APPROVED',
+        isOtSlotActive: true
+      });
+
+      vi.setSystemTime(new Date('2026-02-09T16:00:00.000Z'));
+      const createRes = await createSeparatedOtReq(
+        TODAY,
+        `${TODAY}T01:30:00+07:00`,
+        `${TODAY}T05:00:00+07:00`,
+        'Conflicting pre-register slot'
+      );
+
+      expect(createRes.status).toBe(409);
+      expect(createRes.body.message).toContain('1 phiên OT');
     });
   });
 
@@ -709,8 +1269,8 @@ describe('OT Approval Workflow Integration', () => {
   // ═══════════════════════════════════════════════════════════════
 
   describe('OT Request Validation', () => {
-    it('should reject past date', async () => {
-      const res = await createOtReq('2026-02-09', '2026-02-09T19:00:00+07:00');
+    it('should reject past date outside the current month', async () => {
+      const res = await createOtReq('2026-01-31', '2026-01-31T19:00:00+07:00');
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('past');
     });

@@ -1,4 +1,5 @@
 import { Modal, Button, Alert, Spinner, Textarea } from 'flowbite-react';
+import { getOtRequestDateMeta } from '../../utils/dateDisplay';
 
 /**
  * Confirmation modal for approve/reject actions.
@@ -81,6 +82,7 @@ export default function ApprovalModal({
     const isApprove = action === 'approve';
     const actionLabel = isApprove ? 'duyệt' : 'từ chối';
     const requestDate = request?.date || request?.checkInDate;
+    const otDateMeta = getOtRequestDateMeta(request);
     const otDuration = formatOtPreviewDuration(request?.otPreview);
 
     return (
@@ -105,7 +107,18 @@ export default function ApprovalModal({
                     <div className="bg-gray-50 p-3 rounded text-sm space-y-1">
                         {request?.type === 'OT_REQUEST' ? (
                             <>
-                                <p><span className="text-gray-500">Ngày:</span> {formatDate(requestDate)}</p>
+                                <p>
+                                    <span className="text-gray-500">
+                                        {otDateMeta.isSeparatedCarryOver ? 'Ngày OT thực tế:' : 'Ngày:'}
+                                    </span>{' '}
+                                    {formatDate(otDateMeta.actualDate || requestDate)}
+                                </p>
+                                {otDateMeta.isSeparatedCarryOver && (
+                                    <p>
+                                        <span className="text-gray-500">Ngày neo ca chính:</span>{' '}
+                                        {formatDate(otDateMeta.anchorDate)}
+                                    </p>
+                                )}
                                 <p>
                                     <span className="text-gray-500">Loại OT:</span>{' '}
                                     {request?.otMode === 'SEPARATED' ? 'Phiên tách rời' : 'Liên tục'}

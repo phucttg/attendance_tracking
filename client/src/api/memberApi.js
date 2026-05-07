@@ -86,6 +86,16 @@ export const getUserById = (id) => client.get(`/users/${id}`);
 export const getUserAttendance = (id, month) =>
     client.get(`/attendance/user/${id}`, { params: { month } });
 
+/**
+ * Get my attendance history for a month.
+ * Roles: EMPLOYEE | MANAGER | ADMIN
+ * @param {string} [month] - Month in YYYY-MM format (defaults to current month)
+ * @param {Object} [config={}] - Optional axios config
+ * @returns {Promise} { items: [{ date, checkInAt, checkOutAt, scheduleType, ... }] }
+ */
+export const getMyAttendance = (month, config = {}) =>
+    client.get('/attendance/me', { ...config, params: { month } });
+
 
 // ============================================
 // ADMIN: UPDATE USER

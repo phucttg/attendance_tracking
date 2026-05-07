@@ -26,38 +26,16 @@ export const addDaysToDate = (dateStr, days) => {
     }
 
     // Defensive: validate date ranges
-    if (month < 1 || month > 12 || day < 1 || day > 31) {
+    if (month < 1 || month > 12 || day < 1 || day > 31 || !Number.isInteger(days)) {
         return null;
     }
 
-    // Days in each month (non-leap year)
-    const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-    // Check leap year for February
-    const isLeapYear = (y) => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
-    if (isLeapYear(year)) {
-        daysInMonth[1] = 29;
+    const shifted = new Date(Date.UTC(year, month - 1, day + days, 12, 0, 0));
+    if (isNaN(shifted.getTime())) {
+        return null;
     }
 
-    let newDay = day + days;
-    let newMonth = month;
-    let newYear = year;
-
-    // Handle month overflow
-    while (newDay > daysInMonth[newMonth - 1]) {
-        newDay -= daysInMonth[newMonth - 1];
-        newMonth++;
-
-        // Handle year overflow
-        if (newMonth > 12) {
-            newMonth = 1;
-            newYear++;
-            // Recalculate leap year for new year
-            daysInMonth[1] = isLeapYear(newYear) ? 29 : 28;
-        }
-    }
-
-    return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(newDay).padStart(2, '0')}`;
+    return shifted.toISOString().slice(0, 10);
 };
 
 /**
@@ -134,4 +112,43 @@ export const getVnDateString = (dateValue) => {
         console.warn('Failed to format date in VN timezone:', dateValue, err);
         return null;
     }
+};
+
+/**
+ * Derive actual OT date vs persisted anchor date for request/approval UIs.
+ * Carry-over SEPARATED OT stores the anchor day in request.date while the
+ * actual OT session date is inferred from otStartTime in GMT+7.
+ *
+ * @param {Object} request
+ * @returns {{ anchorDate: string|null, actualDate: string|null, isSeparatedCarryOver: boolean }}
+ */
+export const getOtRequestDateMeta = (request) => {
+    const anchorDate = request?.date || request?.checkInDate || null;
+    if (!request || request.type !== 'OT_REQUEST') {
+        return {
+            anchorDate,
+            actualDate: anchorDate,
+            isSeparatedCarryOver: false,
+        };
+    }
+
+    const previewStart = request?.otPreview?.startTime || null;
+    const rawStart = request?.otStartTime || null;
+    const actualDate =
+        request?.otMode === 'SEPARATED'
+            ? getVnDateString(previewStart || rawStart || request?.estimatedEndTime) || anchorDate
+            : anchorDate;
+
+    const isSeparatedCarryOver = Boolean(
+        request?.otMode === 'SEPARATED' &&
+        anchorDate &&
+        actualDate &&
+        actualDate !== anchorDate
+    );
+
+    return {
+        anchorDate,
+        actualDate,
+        isSeparatedCarryOver,
+    };
 };

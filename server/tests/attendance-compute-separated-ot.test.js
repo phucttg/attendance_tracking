@@ -41,4 +41,32 @@ describe('attendance compute - separated OT', () => {
     expect(result.workMinutes).toBe(510);
     expect(result.otMinutes).toBe(180);
   });
+
+  it('still caps anchor-day work minutes when checkOutAt timestamp lands on the next morning', () => {
+    const dateKey = '2026-03-04';
+    const nextDateKey = '2026-03-05';
+    const checkIn = createTimeInGMT7(dateKey, 8, 0);
+    const nextMorningCheckOut = createTimeInGMT7(nextDateKey, 7, 59);
+
+    const minutes = computeWorkMinutes(dateKey, checkIn, nextMorningCheckOut, true, 'SEPARATED');
+
+    expect(minutes).toBe(510);
+  });
+
+  it('computeAttendance keeps separated OT minutes on the anchor-day snapshot for next-morning sessions', () => {
+    const dateKey = '2026-03-04';
+    const nextDateKey = '2026-03-05';
+    const result = computeAttendance({
+      date: dateKey,
+      checkInAt: createTimeInGMT7(dateKey, 8, 0),
+      checkOutAt: createTimeInGMT7(nextDateKey, 7, 59),
+      otApproved: true,
+      otMode: 'SEPARATED',
+      separatedOtMinutes: 210
+    });
+
+    expect(result.status).toBe('ON_TIME');
+    expect(result.workMinutes).toBe(510);
+    expect(result.otMinutes).toBe(210);
+  });
 });

@@ -7,7 +7,8 @@ import {
   buildOtPreview,
   getDateKey,
   getSeparatedOtDuration,
-  isWeekend
+  isWeekend,
+  isWithinCurrentMonthPastWindow
 } from '../utils/dateUtils.js';
 import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
 import {
@@ -22,10 +23,15 @@ import { createAdjustTimeRequest } from './adjustTimeService.js';
 import { createLeaveRequest, getApprovedLeaveDates } from './leaveService.js';
 import { createOtRequest, cancelOtRequest } from './otService.js';
 import {
+  buildApprovedAttendanceOtSnapshot,
+  buildClearedAttendanceOtSnapshot
+} from '../utils/otSnapshot.js';
+import {
   formatMinutesAsTime,
   getEarliestContinuousOtEndMinutes,
   getOtThresholdMinutes,
   getOtThresholdTimeForDate,
+  isFixedShiftScheduleType,
   isFlexibleScheduleType,
   normalizeScheduleType
 } from '../utils/schedulePolicy.js';
@@ -505,8 +511,16 @@ async function approveRequestCore(requestId, approver, session) {
       session
     );
     const isWorkday = await isWorkdayForDate(existingRequest.date);
-    if (isWorkday && isFlexibleScheduleType(effectiveScheduleType)) {
-      const error = new Error('Cannot approve OT for FLEXIBLE schedule on workday');
+    const isFlexibleWorkday = isWorkday && isFlexibleScheduleType(effectiveScheduleType);
+    const todayKey = getDateKey(new Date());
+    const isPastFlexibleDate = isFlexibleWorkday && existingRequest.date < todayKey;
+    const isPastCurrentMonthFixedShiftDate =
+      !isFlexibleWorkday &&
+      isFixedShiftScheduleType(effectiveScheduleType) &&
+      isWithinCurrentMonthPastWindow(existingRequest.date, todayKey);
+
+    if (isPastFlexibleDate && !isWithinCurrentMonthPastWindow(existingRequest.date, todayKey)) {
+      const error = new Error('Cannot approve OT for FLEXIBLE schedule outside the current month');
       error.statusCode = 400;
       throw error;
     }
@@ -522,7 +536,7 @@ async function approveRequestCore(requestId, approver, session) {
     const earliestContinuousEndLabel = formatMinutesAsTime(earliestContinuousEndMinutes) || '18:00';
 
     if (otMode === 'CONTINUOUS') {
-      if (isWorkday && !hasRealSchedule) {
+      if (isWorkday && !hasRealSchedule && !isFlexibleWorkday) {
         const error = new Error('Cannot approve OT: employee must register work schedule before OT approval');
         error.statusCode = 400;
         throw error;
@@ -545,34 +559,157 @@ async function approveRequestCore(requestId, approver, session) {
       })();
       const endDateKey = getDateKey(estimatedEndTime);
       const isCrossMidnight = endDateKey === nextDateKey;
+      const endDateAllowed = endDateKey === requestDateKey || isCrossMidnight;
 
-      if (!isCrossMidnight && thresholdTime && estimatedEndTime < thresholdTime) {
-        const error = new Error(`Cannot approve OT: estimatedEndTime cannot be before ${thresholdLabel} (GMT+7)`);
+      if (!endDateAllowed) {
+        const error = new Error('Cannot approve OT: estimatedEndTime must be on request date or immediate next day');
         error.statusCode = 400;
         throw error;
       }
 
-      const estimatedMinutesFromThreshold = thresholdTime
-        ? Math.floor((estimatedEndTime.getTime() - thresholdTime.getTime()) / (1000 * 60))
-        : 0;
-      if (estimatedMinutesFromThreshold < 30) {
-        const error = new Error(
-          `Cannot approve OT: minimum duration is 30 minutes (earliest valid end: ${earliestContinuousEndLabel})`
-        );
-        error.statusCode = 400;
-        throw error;
-      }
-
-      // Legacy invariant: request must be submitted/updated before checkout.
-      // Allow approval when there is no attendance yet (future/pre-checkin)
-      // or attendance exists but checkout has not happened.
-      if (attendance?.checkOutAt) {
-        const requestEffectiveTime = new Date(existingRequest.updatedAt || existingRequest.createdAt);
-        const checkoutTime = new Date(attendance.checkOutAt);
-        if (requestEffectiveTime > checkoutTime) {
-          const error = new Error('Cannot request OT after checkout. OT must be requested before checking out.');
+      if (isCrossMidnight) {
+        const shiftedEndTime = new Date(estimatedEndTime.getTime() + (7 * 60 * 60 * 1000));
+        const endTotalMinutes = shiftedEndTime.getUTCHours() * 60 + shiftedEndTime.getUTCMinutes();
+        if (endTotalMinutes >= 8 * 60) {
+          const error = new Error('Cannot approve OT: next-day end time must be before 08:00 (GMT+7)');
           error.statusCode = 400;
           throw error;
+        }
+      }
+
+      if (isFlexibleWorkday) {
+        if (!existingRequest.otStartTime) {
+          const error = new Error('Cannot approve OT: otStartTime is required for FLEXIBLE continuous OT');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const otStartTime = new Date(existingRequest.otStartTime);
+        if (isNaN(otStartTime.getTime())) {
+          const error = new Error('Cannot approve OT: invalid otStartTime');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (getDateKey(otStartTime) !== existingRequest.date) {
+          const error = new Error('Cannot approve OT: flexible continuous otStartTime must be on request date');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (estimatedEndTime <= otStartTime) {
+          const error = new Error('Cannot approve OT: estimatedEndTime must be after otStartTime');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const explicitDurationMinutes = Math.floor((estimatedEndTime.getTime() - otStartTime.getTime()) / (1000 * 60));
+        if (explicitDurationMinutes < 30) {
+          const error = new Error('Cannot approve OT: minimum duration is 30 minutes');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (isPastFlexibleDate && (!attendance?.checkInAt || !attendance?.checkOutAt)) {
+          const error = new Error('Cannot approve OT: flexible past-day attendance must be completed');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (attendance?.checkInAt && otStartTime < new Date(attendance.checkInAt)) {
+          const error = new Error('Cannot approve OT: otStartTime cannot be before actual check-in');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (attendance?.checkOutAt && otStartTime >= new Date(attendance.checkOutAt)) {
+          const error = new Error('Cannot approve OT: otStartTime must be before actual check-out');
+          error.statusCode = 400;
+          throw error;
+        }
+      } else if (isPastCurrentMonthFixedShiftDate) {
+        if (!attendance?.checkInAt || !attendance?.checkOutAt) {
+          const error = new Error('Cannot approve OT: fixed-shift past-day attendance must be completed');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const checkoutTime = new Date(attendance.checkOutAt);
+        if (isNaN(checkoutTime.getTime())) {
+          const error = new Error('Cannot approve OT: invalid attendance checkout time');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const checkoutDateKey = getDateKey(checkoutTime);
+        const checkoutIsCrossMidnight = checkoutDateKey === nextDateKey;
+        if (checkoutDateKey !== requestDateKey && !checkoutIsCrossMidnight) {
+          const error = new Error('Cannot approve OT: attendance checkout must be on request date or immediate next day');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (checkoutIsCrossMidnight) {
+          const shiftedCheckoutTime = new Date(checkoutTime.getTime() + (7 * 60 * 60 * 1000));
+          const checkoutTotalMinutes = shiftedCheckoutTime.getUTCHours() * 60 + shiftedCheckoutTime.getUTCMinutes();
+          if (checkoutTotalMinutes >= 8 * 60) {
+            const error = new Error('Cannot approve OT: next-day checkout time must be before 08:00 (GMT+7)');
+            error.statusCode = 400;
+            throw error;
+          }
+        }
+
+        if (estimatedEndTime.getTime() !== checkoutTime.getTime()) {
+          const error = new Error('Cannot approve OT: attendance checkout changed after the OT request was created');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (!isCrossMidnight && thresholdTime && estimatedEndTime < thresholdTime) {
+          const error = new Error(`Cannot approve OT: estimatedEndTime cannot be before ${thresholdLabel} (GMT+7)`);
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const estimatedMinutesFromThreshold = thresholdTime
+          ? Math.floor((estimatedEndTime.getTime() - thresholdTime.getTime()) / (1000 * 60))
+          : 0;
+        if (estimatedMinutesFromThreshold < 30) {
+          const error = new Error(
+            `Cannot approve OT: minimum duration is 30 minutes (earliest valid end: ${earliestContinuousEndLabel})`
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+      } else {
+        if (!isCrossMidnight && thresholdTime && estimatedEndTime < thresholdTime) {
+          const error = new Error(`Cannot approve OT: estimatedEndTime cannot be before ${thresholdLabel} (GMT+7)`);
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const estimatedMinutesFromThreshold = thresholdTime
+          ? Math.floor((estimatedEndTime.getTime() - thresholdTime.getTime()) / (1000 * 60))
+          : 0;
+        if (estimatedMinutesFromThreshold < 30) {
+          const error = new Error(
+            `Cannot approve OT: minimum duration is 30 minutes (earliest valid end: ${earliestContinuousEndLabel})`
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+
+        // Legacy invariant: request must be submitted/updated before checkout.
+        // Allow approval when there is no attendance yet (future/pre-checkin)
+        // or attendance exists but checkout has not happened.
+        if (attendance?.checkOutAt) {
+          const requestEffectiveTime = new Date(existingRequest.updatedAt || existingRequest.createdAt);
+          const checkoutTime = new Date(attendance.checkOutAt);
+          if (requestEffectiveTime > checkoutTime) {
+            const error = new Error('Cannot request OT after checkout. OT must be requested before checking out.');
+            error.statusCode = 400;
+            throw error;
+          }
         }
       }
     } else {
@@ -597,7 +734,7 @@ async function approveRequestCore(requestId, approver, session) {
         throw error;
       }
 
-      if (!thresholdTime || otStartTime < thresholdTime) {
+      if (!isFlexibleWorkday && (!thresholdTime || otStartTime < thresholdTime)) {
         const error = new Error(`Cannot approve separated OT: otStartTime must be at or after ${thresholdLabel} (GMT+7)`);
         error.statusCode = 400;
         throw error;
@@ -850,22 +987,13 @@ async function approveRequestCore(requestId, approver, session) {
   
   // OT_REQUEST: Set mode-aware OT snapshot on attendance
   if (updatedRequest.type === 'OT_REQUEST') {
-    const otMode = updatedRequest.otMode === 'SEPARATED' ? 'SEPARATED' : 'CONTINUOUS';
-    const separatedOtMinutes = otMode === 'SEPARATED'
-      ? getSeparatedOtDuration(new Date(updatedRequest.otStartTime), new Date(updatedRequest.estimatedEndTime))
-      : null;
-
     const otQuery = Attendance.findOneAndUpdate(
       { 
         userId: updatedRequest.userId._id,
         date: updatedRequest.date 
       },
       { 
-        $set: {
-          otApproved: true,
-          otMode,
-          separatedOtMinutes
-        }
+        $set: buildApprovedAttendanceOtSnapshot(updatedRequest)
       },
       { upsert: false }
     );
@@ -1186,16 +1314,9 @@ async function updateAttendanceFromRequest(request, session = null, options = {}
   const approvedOt = session ? await otQuery.session(session) : await otQuery;
 
   if (approvedOt) {
-    updateFields.otApproved = true;
-    const approvedOtMode = approvedOt.otMode === 'SEPARATED' ? 'SEPARATED' : 'CONTINUOUS';
-    updateFields.otMode = approvedOtMode;
-    updateFields.separatedOtMinutes = approvedOtMode === 'SEPARATED'
-      ? getSeparatedOtDuration(new Date(approvedOt.otStartTime), new Date(approvedOt.estimatedEndTime))
-      : null;
+    Object.assign(updateFields, buildApprovedAttendanceOtSnapshot(approvedOt));
   } else {
-    updateFields.otApproved = false;
-    updateFields.otMode = null;
-    updateFields.separatedOtMinutes = null;
+    Object.assign(updateFields, buildClearedAttendanceOtSnapshot());
   }
 
   // Defensive check: cannot create new attendance without checkInAt

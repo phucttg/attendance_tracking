@@ -69,6 +69,30 @@ function normalizeTimestamp(timestamp) {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function computeFlexibleApprovedOtMinutes(checkInAt, checkOutAt, approvedOtStartTime, approvedOtEndTime) {
+  const actualCheckIn = normalizeTimestamp(checkInAt);
+  const actualCheckOut = normalizeTimestamp(checkOutAt);
+  const approvedStart = normalizeTimestamp(approvedOtStartTime);
+  const approvedEnd = normalizeTimestamp(approvedOtEndTime);
+
+  if (!actualCheckOut || !approvedStart || !approvedEnd) {
+    return 0;
+  }
+
+  const effectiveStart = actualCheckIn && actualCheckIn > approvedStart
+    ? actualCheckIn
+    : approvedStart;
+  const effectiveEnd = actualCheckOut < approvedEnd
+    ? actualCheckOut
+    : approvedEnd;
+
+  if (effectiveEnd <= effectiveStart) {
+    return 0;
+  }
+
+  return Math.max(0, getMinutesDiff(effectiveStart, effectiveEnd));
+}
+
 function computeNoAttendanceStatus(dateKey, leaveDates, options = {}) {
   const todayKey = getTodayDateKey();
   const today = dateKey === todayKey;
@@ -118,7 +142,9 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
     checkOutAt,
     otApproved = false,
     otMode = 'CONTINUOUS',
-    separatedOtMinutes = 0
+    separatedOtMinutes = 0,
+    approvedOtStartTime = null,
+    approvedOtEndTime = null
   } = attendance;
 
   const dateKey = normalizeDateKey(date);
@@ -210,16 +236,19 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
       otMode,
       scheduleSnapshot
     );
-    const otMinutes = isFlexible
-      ? 0
-      : computeOtMinutes(
-        dateKey,
-        checkOut,
-        otApproved,
-        otMode,
-        separatedOtMinutes,
-        scheduleSnapshot
-      );
+    const otMinutes = computeOtMinutes(
+      dateKey,
+      checkOut,
+      otApproved,
+      otMode,
+      separatedOtMinutes,
+      scheduleSnapshot,
+      {
+        checkInAt: checkIn,
+        approvedOtStartTime,
+        approvedOtEndTime
+      }
+    );
     const isEarlyLeave = isFlexible ? false : checkIsEarlyLeave(dateKey, checkOut, scheduleSnapshot);
 
     let status = 'ON_TIME';
@@ -371,8 +400,15 @@ export function computeOtMinutes(
   otApproved = false,
   otMode = 'CONTINUOUS',
   separatedOtMinutes = 0,
-  scheduleSnapshot = null
+  scheduleSnapshot = null,
+  options = {}
 ) {
+  const {
+    checkInAt = null,
+    approvedOtStartTime = null,
+    approvedOtEndTime = null
+  } = options;
+
   if (!otApproved) {
     return 0;
   }
@@ -393,7 +429,12 @@ export function computeOtMinutes(
     : resolveAttendanceScheduleSnapshot();
 
   if (isFlexibleScheduleType(snapshot.scheduleType)) {
-    return 0;
+    return computeFlexibleApprovedOtMinutes(
+      checkInAt,
+      checkOutAt,
+      approvedOtStartTime,
+      approvedOtEndTime
+    );
   }
 
   const otThreshold = getOtThresholdTimeForDate(dateKey, snapshot.scheduleType);

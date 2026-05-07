@@ -348,7 +348,50 @@ requestSchema.pre('validate', function() {
     }
 
     if (this.otMode === 'CONTINUOUS') {
-      this.otStartTime = null;
+      if (!this.otStartTime) {
+        this.otStartTime = null;
+        return;
+      }
+
+      if (!(this.otStartTime instanceof Date) || isNaN(this.otStartTime.getTime())) {
+        this.invalidate('otStartTime', 'otStartTime is invalid');
+        return;
+      }
+
+      const otStartDateKey = getDateKeyInBusinessTz(this.otStartTime);
+      const otStartParts = getTimePartsInBusinessTz(this.otStartTime);
+      const startIsSameDay = otStartDateKey === this.date;
+      const startIsNextDay = otStartDateKey === nextDateKey;
+
+      if (!startIsSameDay && !startIsNextDay) {
+        this.invalidate(
+          'otStartTime',
+          `otStartTime must belong to date ${this.date} or ${nextDateKey} (GMT+${BUSINESS_TZ_OFFSET_HOURS})`
+        );
+        return;
+      }
+
+      if (startIsNextDay && otStartParts.totalMinutes >= crossMidnightCutoffMinutes) {
+        this.invalidate(
+          'otStartTime',
+          'Cross-midnight OT start time must be before 08:00 (GMT+7)'
+        );
+        return;
+      }
+
+      if (this.estimatedEndTime <= this.otStartTime) {
+        this.invalidate('estimatedEndTime', 'estimatedEndTime must be after otStartTime');
+        return;
+      }
+
+      const continuousDurationMinutes = Math.floor((this.estimatedEndTime - this.otStartTime) / (1000 * 60));
+      if (continuousDurationMinutes < OT_MIN_DURATION_MINUTES) {
+        this.invalidate(
+          'estimatedEndTime',
+          `CONTINUOUS OT with explicit otStartTime must be at least ${OT_MIN_DURATION_MINUTES} minutes`
+        );
+      }
+
       return;
     }
 

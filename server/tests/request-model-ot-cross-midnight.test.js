@@ -37,12 +37,12 @@ describe('Request model - OT cross-midnight validation', () => {
     await expect(doc.validate()).rejects.toThrow(/2026-03-03/);
   });
 
-  it('keeps same-day minimum end time validation unchanged', async () => {
+  it('leaves same-day minimum end time enforcement to the service layer', async () => {
     const doc = new Request(buildOtDoc({
       estimatedEndTime: new Date('2026-03-02T17:50:00+07:00')
     }));
 
-    await expect(doc.validate()).rejects.toThrow(/minimum end time/);
+    await expect(doc.validate()).resolves.toBeUndefined();
   });
 
   it('accepts separated OT when start/end window is valid', async () => {
@@ -50,6 +50,16 @@ describe('Request model - OT cross-midnight validation', () => {
       otMode: 'SEPARATED',
       otStartTime: new Date('2026-03-02T22:00:00+07:00'),
       estimatedEndTime: new Date('2026-03-03T01:00:00+07:00')
+    }));
+
+    await expect(doc.validate()).resolves.toBeUndefined();
+  });
+
+  it('accepts continuous OT when explicit otStartTime is valid', async () => {
+    const doc = new Request(buildOtDoc({
+      otMode: 'CONTINUOUS',
+      otStartTime: new Date('2026-03-02T18:00:00+07:00'),
+      estimatedEndTime: new Date('2026-03-02T20:00:00+07:00')
     }));
 
     await expect(doc.validate()).resolves.toBeUndefined();

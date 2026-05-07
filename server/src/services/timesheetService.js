@@ -108,7 +108,7 @@ async function buildTimesheetMatrix(users, month, holidayDates) {
         date: { $gte: monthStart, $lte: monthEnd }
     })
         .select(
-            'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+            'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes approvedOtStartTime approvedOtEndTime ' +
             'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
             'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
         )
@@ -284,6 +284,8 @@ function computeCellStatus(dateKey, attendance, registeredScheduleType, holidayD
             otApproved: !!attendance.otApproved,
             otMode: attendance.otMode,
             separatedOtMinutes: attendance.separatedOtMinutes,
+            approvedOtStartTime: attendance.approvedOtStartTime,
+            approvedOtEndTime: attendance.approvedOtEndTime,
             scheduleType: attendance.scheduleType,
             scheduledStartMinutes: attendance.scheduledStartMinutes,
             scheduledEndMinutes: attendance.scheduledEndMinutes,

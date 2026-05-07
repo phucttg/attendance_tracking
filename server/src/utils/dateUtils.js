@@ -278,6 +278,19 @@ export function getSeparatedOtDuration(startTime, endTime) {
 }
 
 /**
+ * Check if dateKey is a past date within the same calendar month as todayKey.
+ * Used for OT validation: allows past fixed-shift days within current month.
+ */
+export function isWithinCurrentMonthPastWindow(dateKey, todayKey) {
+  return (
+    Boolean(dateKey) &&
+    Boolean(todayKey) &&
+    dateKey < todayKey &&
+    dateKey.slice(0, 7) === todayKey.slice(0, 7)
+  );
+}
+
+/**
  * Build OT preview payload for UI rendering.
  *
  * @param {string} dateKey
@@ -291,18 +304,17 @@ export function buildOtPreview(dateKey, otMode, otStartTime, estimatedEndTime) {
   const endTime = (estimatedEndTime instanceof Date && !isNaN(estimatedEndTime.getTime()))
     ? estimatedEndTime
     : null;
+  const explicitStart = (otStartTime instanceof Date && !isNaN(otStartTime.getTime()))
+    ? otStartTime
+    : null;
 
   const continuousStart = (
     dateKey &&
     typeof dateKey === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
-  ) ? createTimeInGMT7(dateKey, 17, 30) : null;
+  ) ? (explicitStart || createTimeInGMT7(dateKey, 17, 30)) : explicitStart;
 
-  const separatedStart = (otStartTime instanceof Date && !isNaN(otStartTime.getTime()))
-    ? otStartTime
-    : null;
-
-  const startTime = mode === 'SEPARATED' ? separatedStart : continuousStart;
+  const startTime = mode === 'SEPARATED' ? explicitStart : continuousStart;
   const minutes = (startTime && endTime && endTime > startTime)
     ? getMinutesDiff(startTime, endTime)
     : 0;
