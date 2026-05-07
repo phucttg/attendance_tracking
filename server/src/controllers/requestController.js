@@ -76,7 +76,7 @@ export const createRequest = async (req, res) => {
         date,
         estimatedEndTime,
         otMode: normalizedOtMode,
-        otStartTime: normalizedOtMode === 'SEPARATED' ? otStartTime : null,
+        otStartTime: otStartTime || null,
         reason
       });
     } else if (type === 'LEAVE') {

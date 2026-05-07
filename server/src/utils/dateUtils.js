@@ -291,18 +291,17 @@ export function buildOtPreview(dateKey, otMode, otStartTime, estimatedEndTime) {
   const endTime = (estimatedEndTime instanceof Date && !isNaN(estimatedEndTime.getTime()))
     ? estimatedEndTime
     : null;
+  const explicitStart = (otStartTime instanceof Date && !isNaN(otStartTime.getTime()))
+    ? otStartTime
+    : null;
 
   const continuousStart = (
     dateKey &&
     typeof dateKey === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
-  ) ? createTimeInGMT7(dateKey, 17, 30) : null;
+  ) ? (explicitStart || createTimeInGMT7(dateKey, 17, 30)) : explicitStart;
 
-  const separatedStart = (otStartTime instanceof Date && !isNaN(otStartTime.getTime()))
-    ? otStartTime
-    : null;
-
-  const startTime = mode === 'SEPARATED' ? separatedStart : continuousStart;
+  const startTime = mode === 'SEPARATED' ? explicitStart : continuousStart;
   const minutes = (startTime && endTime && endTime > startTime)
     ? getMinutesDiff(startTime, endTime)
     : 0;

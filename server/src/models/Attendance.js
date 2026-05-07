@@ -65,6 +65,14 @@ const attendanceSchema = new mongoose.Schema(
       type: Number,
       default: null
     },
+    approvedOtStartTime: {
+      type: Date,
+      default: null
+    },
+    approvedOtEndTime: {
+      type: Date,
+      default: null
+    },
     scheduleType: {
       type: String,
       enum: SCHEDULE_TYPES,

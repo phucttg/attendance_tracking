@@ -215,7 +215,7 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         date: { $gte: monthStart, $lte: monthEnd }
     })
         .select(
-            'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+            'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes approvedOtStartTime approvedOtEndTime ' +
             'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
             'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
         )
@@ -379,6 +379,8 @@ function computeUserMonthlySummary(records, holidayDates) {
                 otApproved: record.otApproved,
                 otMode: record.otMode,
                 separatedOtMinutes: record.separatedOtMinutes,
+                approvedOtStartTime: record.approvedOtStartTime,
+                approvedOtEndTime: record.approvedOtEndTime,
                 scheduleType: record.scheduleType,
                 scheduledStartMinutes: record.scheduledStartMinutes,
                 scheduledEndMinutes: record.scheduledEndMinutes,

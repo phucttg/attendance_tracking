@@ -13,6 +13,7 @@ import {
   isScheduleEnforcedForDate,
   normalizeScheduleType
 } from '../utils/schedulePolicy.js';
+import { buildApprovedAttendanceOtSnapshot } from '../utils/otSnapshot.js';
 
 const isWorkdayDate = (dateKey, holidayDates = new Set()) =>
   !isWeekend(dateKey) && !holidayDates.has(dateKey);
@@ -167,11 +168,7 @@ export const checkIn = async (userId) => {
     attendance = await Attendance.findByIdAndUpdate(
       attendance._id,
       {
-        $set: {
-          otApproved: true,
-          otMode: 'CONTINUOUS',
-          separatedOtMinutes: null
-        }
+        $set: buildApprovedAttendanceOtSnapshot(approvedOt)
       },
       { new: true }
     );
@@ -333,7 +330,7 @@ export const getMonthlyHistory = async (userId, month, holidayDates = new Set(),
     date: { $regex: `^${month}` }
   })
   .select(
-    'date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+    'date checkInAt checkOutAt otApproved otMode separatedOtMinutes approvedOtStartTime approvedOtEndTime ' +
     'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
     'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
   )
@@ -364,6 +361,8 @@ export const getMonthlyHistory = async (userId, month, holidayDates = new Set(),
       otApproved: false,
       otMode: null,
       separatedOtMinutes: null,
+      approvedOtStartTime: null,
+      approvedOtEndTime: null,
       scheduleType: null
     };
 
@@ -376,6 +375,8 @@ export const getMonthlyHistory = async (userId, month, holidayDates = new Set(),
         otApproved: record.otApproved,
         otMode: record.otMode,
         separatedOtMinutes: record.separatedOtMinutes,
+        approvedOtStartTime: record.approvedOtStartTime,
+        approvedOtEndTime: record.approvedOtEndTime,
         scheduleType: record.scheduleType,
         scheduledStartMinutes: record.scheduledStartMinutes,
         scheduledEndMinutes: record.scheduledEndMinutes,
@@ -487,6 +488,7 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
   })
     .select(
       'userId date checkInAt checkOutAt otApproved otMode separatedOtMinutes ' +
+      'approvedOtStartTime approvedOtEndTime ' +
       'scheduleType scheduledStartMinutes scheduledEndMinutes lateGraceMinutes ' +
       'lateTrackingEnabled earlyLeaveTrackingEnabled scheduleSource'
     )
@@ -554,6 +556,8 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
           otApproved: attendance.otApproved,
           otMode: attendance.otMode,
           separatedOtMinutes: attendance.separatedOtMinutes,
+          approvedOtStartTime: attendance.approvedOtStartTime,
+          approvedOtEndTime: attendance.approvedOtEndTime,
           scheduleType: attendance.scheduleType,
           scheduledStartMinutes: attendance.scheduledStartMinutes,
           scheduledEndMinutes: attendance.scheduledEndMinutes,
