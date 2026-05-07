@@ -7,7 +7,8 @@ import {
   buildOtPreview,
   getDateKey,
   getSeparatedOtDuration,
-  isWeekend
+  isWeekend,
+  isWithinCurrentMonthPastWindow
 } from '../utils/dateUtils.js';
 import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
 import {
@@ -30,11 +31,10 @@ import {
   getEarliestContinuousOtEndMinutes,
   getOtThresholdMinutes,
   getOtThresholdTimeForDate,
+  isFixedShiftScheduleType,
   isFlexibleScheduleType,
   normalizeScheduleType
 } from '../utils/schedulePolicy.js';
-
-const FIXED_SHIFT_TYPES = new Set(['SHIFT_1', 'SHIFT_2']);
 
 /**
  * Router function: Create request of any type
@@ -265,14 +265,6 @@ const isWorkdayForDate = async (dateKey) => {
   const holidays = await getHolidayDatesForMonth(dateKey.slice(0, 7));
   return !holidays.has(dateKey);
 };
-
-const isWithinCurrentMonthPastWindow = (dateKey, todayKey) =>
-  Boolean(dateKey) &&
-  Boolean(todayKey) &&
-  dateKey < todayKey &&
-  dateKey.slice(0, 7) === todayKey.slice(0, 7);
-
-const isFixedShiftScheduleType = (value) => FIXED_SHIFT_TYPES.has(normalizeScheduleType(value));
 
 /**
  * Count pending requests with RBAC scope enforcement.

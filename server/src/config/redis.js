@@ -71,6 +71,7 @@ export function initRateLimitRedis() {
       })
       .catch((err) => {
         console.warn('[rate-limit] Redis connection failed; rate limits fail open:', err?.message || err);
+        connectPromise = null;
         return null;
       });
   }

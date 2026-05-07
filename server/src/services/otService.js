@@ -6,7 +6,8 @@ import {
   getDateKey,
   getSeparatedOtDuration,
   getTodayDateKey,
-  isWeekend
+  isWeekend,
+  isWithinCurrentMonthPastWindow
 } from '../utils/dateUtils.js';
 import { toValidDate, assertHasTzIfString } from './requestDateValidation.js';
 import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
@@ -15,6 +16,7 @@ import {
   getEarliestContinuousOtEndMinutes,
   getOtThresholdMinutes,
   getOtThresholdTimeForDate,
+  isFixedShiftScheduleType,
   isFlexibleScheduleType,
   normalizeScheduleType
 } from '../utils/schedulePolicy.js';
@@ -22,7 +24,6 @@ import {
 const BUSINESS_TZ_OFFSET_MS = 7 * 60 * 60 * 1000;
 const OT_CROSS_MIDNIGHT_CUTOFF = '08:00';
 const OT_MIN_DURATION_MINUTES = 30;
-const FIXED_SHIFT_TYPES = new Set(['SHIFT_1', 'SHIFT_2']);
 
 const getNextDateKey = (dateKey) => {
   const [year, month, day] = dateKey.split('-').map(Number);
@@ -49,14 +50,6 @@ const isBeforeCrossMidnightCutoff = (date) => {
   }
   return getTimeKeyInGmt7(date) < OT_CROSS_MIDNIGHT_CUTOFF;
 };
-
-const isWithinCurrentMonthPastWindow = (dateKey, todayKey) =>
-  Boolean(dateKey) &&
-  Boolean(todayKey) &&
-  dateKey < todayKey &&
-  dateKey.slice(0, 7) === todayKey.slice(0, 7);
-
-const isFixedShiftScheduleType = (value) => FIXED_SHIFT_TYPES.has(normalizeScheduleType(value));
 
 const resolveEffectiveScheduleType = async (userId, date, attendanceRecord = null) => {
   const attendanceType = normalizeScheduleType(attendanceRecord?.scheduleType);

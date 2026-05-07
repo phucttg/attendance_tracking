@@ -158,7 +158,7 @@ export const loginIpLimiter = createAppRateLimiter({
   identifier: 'login-ip',
   prefix: 'rl:login-ip:',
   windowMs: 5 * ONE_MINUTE_MS,
-  limit: 600,
+  limit: 30,
   keyGenerator: ipRateLimitKey,
   skipSuccessfulRequests: true
 });

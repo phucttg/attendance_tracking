@@ -278,6 +278,19 @@ export function getSeparatedOtDuration(startTime, endTime) {
 }
 
 /**
+ * Check if dateKey is a past date within the same calendar month as todayKey.
+ * Used for OT validation: allows past fixed-shift days within current month.
+ */
+export function isWithinCurrentMonthPastWindow(dateKey, todayKey) {
+  return (
+    Boolean(dateKey) &&
+    Boolean(todayKey) &&
+    dateKey < todayKey &&
+    dateKey.slice(0, 7) === todayKey.slice(0, 7)
+  );
+}
+
+/**
  * Build OT preview payload for UI rendering.
  *
  * @param {string} dateKey
