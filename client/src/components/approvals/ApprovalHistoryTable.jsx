@@ -1,4 +1,5 @@
 import { Table, Badge, Pagination, Select } from 'flowbite-react';
+import { getOtRequestDateMeta } from '../../utils/dateDisplay';
 
 /**
  * Table displaying approval/rejection history for manager/admin.
@@ -79,7 +80,22 @@ export default function ApprovalHistoryTable({
         if (request.type === 'LEAVE') {
             return `${formatDate(request.leaveStartDate)} → ${formatDate(request.leaveEndDate)}`;
         }
-        return formatDate(request.date || request.checkInDate);
+
+        if (request.type !== 'OT_REQUEST') {
+            return formatDate(request.date || request.checkInDate);
+        }
+
+        const { actualDate, anchorDate, isSeparatedCarryOver } = getOtRequestDateMeta(request);
+        if (!isSeparatedCarryOver) {
+            return formatDate(anchorDate);
+        }
+
+        return (
+            <div className="flex flex-col gap-1">
+                <span>{formatDate(actualDate)}</span>
+                <span className="text-xs text-gray-500">Neo ca: {formatDate(anchorDate)}</span>
+            </div>
+        );
     };
 
     const getRejectReasonDisplay = (request) =>

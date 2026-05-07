@@ -138,7 +138,7 @@ describe('C5: Late Details Deterministic Sorting', () => {
         // Verify values
         expect(lateDetail.date).toBe('2026-02-05');
         expect(lateDetail.checkInTime).toBe('09:00');
-        expect(lateDetail.lateMinutes).toBe(15); // 09:00 is 15 minutes late (standard start 08:45)
+        expect(lateDetail.lateMinutes).toBe(60); // 09:00 is 60 minutes late under default SHIFT_1
     });
 
     it('C5-TC3.1: Late details sorted deterministically with tie-breaking', async () => {

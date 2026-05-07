@@ -11,7 +11,7 @@ import {
 } from 'flowbite-react';
 import { HiPlus } from 'react-icons/hi';
 import { createRequest } from '../../api/requestApi';
-import { getMyWorkSchedules } from '../../api/memberApi';
+import { getMyAttendance, getMyWorkSchedules } from '../../api/memberApi';
 import {
     addDaysToDate,
     buildIsoTimestamp,
@@ -38,9 +38,15 @@ const isCrossMidnightOt = (timeValue) =>
     Boolean(timeValue) && timeValue < OT_CROSS_MIDNIGHT_CUTOFF;
 
 const getFixedShiftPolicy = (scheduleType) => FIXED_SHIFT_OT_POLICIES[scheduleType] ?? null;
+const normalizeScheduleType = (value) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : '';
+const isFlexibleScheduleType = (value) => normalizeScheduleType(value) === 'FLEXIBLE';
+const getMonthStartDate = (dateStr) =>
+    dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr.slice(0, 7)}-01` : '';
 
-const resolveOtDate = (date, timeValue) => {
+const resolveOtDate = (date, timeValue, keepEarlyTimeOnSelectedDate = false) => {
     if (!date || !timeValue) return null;
+    if (keepEarlyTimeOnSelectedDate) return date;
     if (!isCrossMidnightOt(timeValue)) return date;
     return addDaysToDate(date, 1);
 };
@@ -59,6 +65,42 @@ const formatMinutes = (minutes) => {
     return `${hours} giờ ${mins} phút`;
 };
 
+const getCurrentTimeKeyInVn = () =>
+    new Date().toLocaleTimeString('en-GB', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    });
+
+const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return '';
+    const parsed = new Date(`${dateStr}T00:00:00+07:00`);
+    if (isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleDateString('vi-VN');
+};
+
+const formatTimeKeyInVn = (dateLike) => {
+    if (!dateLike) return '';
+    const parsed = dateLike instanceof Date ? dateLike : new Date(dateLike);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleTimeString('en-GB', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    });
+};
+
+const formatDateKeyInVn = (dateLike) => {
+    if (!dateLike) return '';
+    const parsed = dateLike instanceof Date ? dateLike : new Date(dateLike);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleDateString('sv-SE', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+    });
+};
+
 /**
  * Form for creating OT_REQUEST requests, including confirm modal flow.
  */
@@ -72,50 +114,125 @@ export default function OtRequestForm({
     const today = new Date().toLocaleDateString('sv-SE', {
         timeZone: 'Asia/Ho_Chi_Minh',
     });
+    const tomorrow = addDaysToDate(today, 1);
+    const currentMonthStart = getMonthStartDate(today);
 
     const [submitting, setSubmitting] = useState(false);
     const [showOtConfirmModal, setShowOtConfirmModal] = useState(false);
     const [estimatedOtMinutes, setEstimatedOtMinutes] = useState(null);
     const [modalError, setModalError] = useState('');
     const [scheduleItemsByDate, setScheduleItemsByDate] = useState({});
+    const [attendanceItemsByDate, setAttendanceItemsByDate] = useState({});
+    const [attendanceContextLoaded, setAttendanceContextLoaded] = useState(false);
 
     const otMode = formData.otMode || OT_MODE_CONTINUOUS;
+    const isSeparated = otMode === OT_MODE_SEPARATED;
+    const selectedAttendanceItem = formData.date ? attendanceItemsByDate[formData.date] || null : null;
     const selectedScheduleItem = formData.date ? scheduleItemsByDate[formData.date] || null : null;
-    const selectedFixedShiftPolicy = getFixedShiftPolicy(selectedScheduleItem?.scheduleType);
+    const selectedScheduleType = normalizeScheduleType(
+        selectedAttendanceItem?.scheduleType || selectedScheduleItem?.scheduleType
+    );
+    const isFlexibleSelectedDay = isFlexibleScheduleType(selectedScheduleType);
+    const selectedFixedShiftPolicy = getFixedShiftPolicy(selectedScheduleType);
+    const selectedActualCheckoutAt = selectedAttendanceItem?.checkOutAt
+        ? new Date(selectedAttendanceItem.checkOutAt)
+        : null;
+    const selectedActualCheckoutTimeKey = formatTimeKeyInVn(selectedActualCheckoutAt);
+    const selectedActualCheckoutDateKey = formatDateKeyInVn(selectedActualCheckoutAt);
+    const currentTimeKey = getCurrentTimeKeyInVn();
+    const isCurrentTimeBeforeCutoff = currentTimeKey < OT_CROSS_MIDNIGHT_CUTOFF;
+    const isSelectedToday = formData.date === today;
+    const isSelectedTomorrow = Boolean(tomorrow) && formData.date === tomorrow;
+    const isPastSelectedDate = Boolean(formData.date) && formData.date < today;
+    const isPastSelectedDateWithinCurrentMonth =
+        Boolean(formData.date) &&
+        formData.date >= currentMonthStart &&
+        formData.date < today;
+    const isPastFixedShiftSelectedDay =
+        isPastSelectedDateWithinCurrentMonth &&
+        Boolean(selectedFixedShiftPolicy) &&
+        !isFlexibleSelectedDay;
+    const shouldUseFixedPastContinuousCheckoutEnd =
+        otMode === OT_MODE_CONTINUOUS && isPastFixedShiftSelectedDay;
+    const effectiveEstimatedEndTimeValue =
+        shouldUseFixedPastContinuousCheckoutEnd && selectedActualCheckoutTimeKey
+            ? selectedActualCheckoutTimeKey
+            : formData.estimatedEndTime;
+    const canUsePastFlexibleWindow = isFlexibleSelectedDay && isPastSelectedDateWithinCurrentMonth;
+    const shouldShowContinuousOtStart = otMode === OT_MODE_CONTINUOUS && isFlexibleSelectedDay;
+    const canUseSameMorningCarryOverWindow = isSeparated && isSelectedToday && isCurrentTimeBeforeCutoff;
+    const canUseTomorrowPreRegisterWindow = isSeparated && isSelectedTomorrow;
+    const canAnchorSeparatedToPreviousDay =
+        canUseSameMorningCarryOverWindow || canUseTomorrowPreRegisterWindow;
+    const carryOverAnchorDate = canAnchorSeparatedToPreviousDay && formData.date
+        ? addDaysToDate(formData.date, -1)
+        : null;
+    const carryOverAttendanceItem = carryOverAnchorDate
+        ? attendanceItemsByDate[carryOverAnchorDate] || null
+        : null;
+    const carryOverFixedShiftPolicy = getFixedShiftPolicy(carryOverAttendanceItem?.scheduleType);
+    const hasEarlySeparatedStart = isSeparated && Boolean(formData.otStartTime) && isCrossMidnightOt(formData.otStartTime);
+    const hasEarlySeparatedEnd = isSeparated && Boolean(formData.estimatedEndTime) && isCrossMidnightOt(formData.estimatedEndTime);
+    const isCarryOverSeparatedActive = canAnchorSeparatedToPreviousDay && hasEarlySeparatedStart && hasEarlySeparatedEnd;
+    const isTomorrowPreRegisterActive = canUseTomorrowPreRegisterWindow && isCarryOverSeparatedActive;
+    const carryOverAnchorDisplay = formatDisplayDate(carryOverAnchorDate);
+    const actualOtDateDisplay = formatDisplayDate(formData.date);
 
     useEffect(() => {
         let active = true;
+        const monthsToFetch = Array.from(
+            new Set(
+                [today.slice(0, 7), addDaysToDate(today, -1)?.slice(0, 7)].filter(Boolean)
+            )
+        );
 
-        getMyWorkSchedules()
-            .then(({ data }) => {
+        Promise.all([
+            getMyWorkSchedules(),
+            Promise.all(monthsToFetch.map((month) => getMyAttendance(month))),
+        ])
+            .then(([scheduleRes, attendanceResponses]) => {
                 if (!active) return;
 
                 const nextItemsByDate = {};
-                const items = Array.isArray(data?.items) ? data.items : [];
-                items.forEach((item) => {
+                const scheduleItems = Array.isArray(scheduleRes?.data?.items) ? scheduleRes.data.items : [];
+                scheduleItems.forEach((item) => {
                     if (item?.workDate) {
                         nextItemsByDate[item.workDate] = item;
                     }
                 });
                 setScheduleItemsByDate(nextItemsByDate);
+
+                const nextAttendanceItemsByDate = {};
+                attendanceResponses.forEach((response) => {
+                    const attendanceItems = Array.isArray(response?.data?.items) ? response.data.items : [];
+                    attendanceItems.forEach((item) => {
+                        if (item?.date) {
+                            nextAttendanceItemsByDate[item.date] = item;
+                        }
+                    });
+                });
+                setAttendanceItemsByDate(nextAttendanceItemsByDate);
+                setAttendanceContextLoaded(true);
             })
             .catch(() => {
                 if (active) {
                     setScheduleItemsByDate({});
+                    setAttendanceItemsByDate({});
+                    setAttendanceContextLoaded(true);
                 }
             });
 
         return () => {
             active = false;
         };
-    }, []);
+    }, [today]);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
 
         if (name === 'otMode') {
             onFieldChange('otMode', value);
-            if (value === OT_MODE_CONTINUOUS) {
+            if (value === OT_MODE_CONTINUOUS && !isFlexibleSelectedDay) {
                 onFieldChange('otStartTime', '');
             }
             return;
@@ -125,12 +242,17 @@ export default function OtRequestForm({
     };
 
     const getPreviewRange = () => {
-        const { date, estimatedEndTime, otStartTime } = formData;
+        const { date, otStartTime } = formData;
+        const estimatedEndTime = effectiveEstimatedEndTimeValue;
         if (!date || !estimatedEndTime) {
             return { start: null, end: null, minutes: 0, endDate: null, startDate: null };
         }
 
-        const endDate = resolveOtDate(date, estimatedEndTime);
+        const endDate = resolveOtDate(
+            date,
+            estimatedEndTime,
+            isSeparated && canAnchorSeparatedToPreviousDay
+        );
         const end = parseVnDateTime(endDate, estimatedEndTime);
         if (!end) {
             return { start: null, end: null, minutes: 0, endDate, startDate: null };
@@ -140,7 +262,11 @@ export default function OtRequestForm({
             if (!otStartTime) {
                 return { start: null, end, minutes: 0, endDate, startDate: null };
             }
-            const startDate = resolveOtDate(date, otStartTime);
+            const startDate = resolveOtDate(
+                date,
+                otStartTime,
+                canAnchorSeparatedToPreviousDay
+            );
             const start = parseVnDateTime(startDate, otStartTime);
             if (!start) {
                 return { start: null, end, minutes: 0, endDate, startDate };
@@ -152,6 +278,26 @@ export default function OtRequestForm({
                 minutes: Number.isFinite(minutes) ? minutes : 0,
                 endDate,
                 startDate,
+            };
+        }
+
+        if (isFlexibleSelectedDay) {
+            if (!otStartTime) {
+                return { start: null, end, minutes: null, endDate, startDate: date };
+            }
+
+            const start = parseVnDateTime(date, otStartTime);
+            if (!start) {
+                return { start: null, end, minutes: 0, endDate, startDate: date };
+            }
+
+            const minutes = Math.floor((end - start) / 60000);
+            return {
+                start,
+                end,
+                minutes: Number.isFinite(minutes) ? minutes : null,
+                endDate,
+                startDate: date,
             };
         }
 
@@ -171,22 +317,48 @@ export default function OtRequestForm({
     };
 
     const validateOtRequest = () => {
-        const { date, estimatedEndTime, reason, otStartTime } = formData;
+        const { date, reason, otStartTime } = formData;
+        const estimatedEndTime = effectiveEstimatedEndTimeValue;
 
         if (!date) return { valid: false, error: 'Vui lòng chọn ngày làm OT' };
-        if (!estimatedEndTime) return { valid: false, error: 'Vui lòng nhập giờ kết thúc OT' };
         if (!reason?.trim()) return { valid: false, error: 'Vui lòng nhập lý do' };
 
         const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
-        if (date < todayStr) {
-            return { valid: false, error: 'Không thể đăng ký OT cho ngày trong quá khứ' };
-        }
+        const monthStart = getMonthStartDate(todayStr);
+        const isPastDate = date < todayStr;
+        const isPastDateWithinCurrentMonth = date >= monthStart && date < todayStr;
+        const isPastFixedShiftDate =
+            isPastDateWithinCurrentMonth &&
+            Boolean(selectedFixedShiftPolicy) &&
+            !isFlexibleSelectedDay;
 
         if (![OT_MODE_CONTINUOUS, OT_MODE_SEPARATED].includes(otMode)) {
             return { valid: false, error: 'Loại OT không hợp lệ' };
         }
 
-        const endDate = resolveOtDate(date, estimatedEndTime);
+        if (isPastDate && !isPastDateWithinCurrentMonth) {
+            return {
+                valid: false,
+                error: 'OT chỉ hỗ trợ đăng ký quá khứ trong tháng hiện tại (GMT+7)',
+            };
+        }
+
+        if (isPastDate && !isFlexibleSelectedDay && !selectedFixedShiftPolicy) {
+            return {
+                valid: false,
+                error: 'OT quá khứ trong tháng hiện tại hiện chỉ hỗ trợ cho Ca 1, Ca 2 hoặc ngày có lịch Linh hoạt',
+            };
+        }
+
+        if (!estimatedEndTime) {
+            return { valid: false, error: 'Vui lòng nhập giờ kết thúc OT' };
+        }
+
+        const endDate = resolveOtDate(
+            date,
+            estimatedEndTime,
+            otMode === OT_MODE_SEPARATED && canAnchorSeparatedToPreviousDay
+        );
         const endTime = parseVnDateTime(endDate, estimatedEndTime);
         if (!endTime) {
             return { valid: false, error: 'Giờ kết thúc OT không hợp lệ' };
@@ -199,14 +371,136 @@ export default function OtRequestForm({
             };
         }
 
-        if (selectedScheduleItem?.scheduleType === 'FLEXIBLE' && selectedScheduleItem?.isWorkday) {
-            return {
-                valid: false,
-                error: 'Lịch Linh hoạt trong ngày làm việc hiện không hỗ trợ đăng ký OT',
-            };
-        }
-
         if (otMode === OT_MODE_CONTINUOUS) {
+            if (isFlexibleSelectedDay) {
+                if (!otStartTime) {
+                    return {
+                        valid: false,
+                        error: 'Vui lòng nhập giờ bắt đầu OT cho lịch Linh hoạt',
+                    };
+                }
+
+                const startTime = parseVnDateTime(date, otStartTime);
+                if (!startTime) {
+                    return { valid: false, error: 'Giờ bắt đầu OT không hợp lệ' };
+                }
+
+                if (endTime <= startTime) {
+                    return { valid: false, error: 'Giờ kết thúc phải sau giờ bắt đầu OT' };
+                }
+
+                const minutes = Math.floor((endTime - startTime) / 60000);
+                if (minutes < 30) {
+                    return { valid: false, error: 'Thời gian OT tối thiểu là 30 phút' };
+                }
+
+                const actualCheckIn = selectedAttendanceItem?.checkInAt
+                    ? new Date(selectedAttendanceItem.checkInAt)
+                    : null;
+                const actualCheckOut = selectedAttendanceItem?.checkOutAt
+                    ? new Date(selectedAttendanceItem.checkOutAt)
+                    : null;
+
+                if (isPastDateWithinCurrentMonth) {
+                    if (!attendanceContextLoaded) {
+                        return {
+                            valid: false,
+                            error: 'Đang tải attendance của ngày quá khứ, vui lòng thử lại sau ít giây',
+                        };
+                    }
+
+                    if (!selectedAttendanceItem?.checkInAt || !selectedAttendanceItem?.checkOutAt) {
+                        return {
+                            valid: false,
+                            error: 'Ngày quá khứ của lịch Linh hoạt phải có attendance đã hoàn tất trước khi đăng ký OT',
+                        };
+                    }
+                }
+
+                if (actualCheckIn && !isNaN(actualCheckIn.getTime()) && startTime < actualCheckIn) {
+                    return {
+                        valid: false,
+                        error: 'Giờ bắt đầu OT không thể trước thời điểm check-in thực tế',
+                    };
+                }
+
+                if (actualCheckOut && !isNaN(actualCheckOut.getTime()) && startTime >= actualCheckOut) {
+                    return {
+                        valid: false,
+                        error: 'Giờ bắt đầu OT phải trước thời điểm check-out thực tế',
+                    };
+                }
+
+                return {
+                    valid: true,
+                    error: '',
+                    otMinutes: minutes,
+                    endOffsetDays: isCrossMidnightOt(estimatedEndTime) ? 1 : 0,
+                    otStartOffsetDays: 0,
+                };
+            }
+
+            if (isPastFixedShiftDate) {
+                if (!attendanceContextLoaded) {
+                    return {
+                        valid: false,
+                        error: 'Đang tải attendance của ngày quá khứ, vui lòng thử lại sau ít giây',
+                    };
+                }
+
+                if (!selectedAttendanceItem?.checkInAt || !selectedAttendanceItem?.checkOutAt) {
+                    return {
+                        valid: false,
+                        error: 'Ngày quá khứ của Ca 1/Ca 2 phải có attendance đã hoàn tất trước khi đăng ký OT',
+                    };
+                }
+
+                if (!selectedActualCheckoutAt || Number.isNaN(selectedActualCheckoutAt.getTime())) {
+                    return {
+                        valid: false,
+                        error: 'Không đọc được giờ check-out thực tế để tạo OT quá khứ',
+                    };
+                }
+
+                const nextDate = addDaysToDate(date, 1);
+                const checkoutIsCrossMidnight = selectedActualCheckoutDateKey === nextDate;
+                const checkoutDateAllowed =
+                    selectedActualCheckoutDateKey === date || checkoutIsCrossMidnight;
+
+                if (!checkoutDateAllowed) {
+                    return {
+                        valid: false,
+                        error: 'Attendance của ngày quá khứ có giờ check-out không hợp lệ để đăng ký OT',
+                    };
+                }
+
+                if (checkoutIsCrossMidnight && selectedActualCheckoutTimeKey >= OT_CROSS_MIDNIGHT_CUTOFF) {
+                    return {
+                        valid: false,
+                        error: 'OT quá khứ liên tục của Ca 1/Ca 2 không hỗ trợ attendance check-out từ 08:00 trở đi của ngày hôm sau',
+                    };
+                }
+
+                const continuousStart = parseVnDateTime(date, selectedFixedShiftPolicy.threshold);
+                const minutes = continuousStart
+                    ? Math.floor((selectedActualCheckoutAt - continuousStart) / 60000)
+                    : null;
+                if (Number.isFinite(minutes) && minutes < 30) {
+                    return {
+                        valid: false,
+                        error: `Giờ check-out thực tế phải đạt tối thiểu ${selectedFixedShiftPolicy.earliestEnd} để đủ 30 phút OT`,
+                    };
+                }
+
+                return {
+                    valid: true,
+                    error: '',
+                    otMinutes: Number.isFinite(minutes) ? minutes : null,
+                    endOffsetDays: checkoutIsCrossMidnight ? 1 : 0,
+                    otStartOffsetDays: 0,
+                };
+            }
+
             if (
                 selectedFixedShiftPolicy &&
                 !isCrossMidnightOt(estimatedEndTime) &&
@@ -237,28 +531,124 @@ export default function OtRequestForm({
             };
         }
 
-        // SEPARATED mode validations
-        if (date !== todayStr) {
-            return { valid: false, error: 'OT tách rời chỉ hỗ trợ đăng ký cho ngày hiện tại (GMT+7)' };
+        const allowsPastFlexibleSeparated = isFlexibleSelectedDay && isPastDateWithinCurrentMonth;
+        const allowsPastFixedSeparated = isPastFixedShiftDate;
+        if (!isSelectedToday && !isSelectedTomorrow && !allowsPastFlexibleSeparated && !allowsPastFixedSeparated) {
+            return {
+                valid: false,
+                error: isFlexibleSelectedDay
+                    ? 'OT tách rời cho lịch Linh hoạt chỉ hỗ trợ ngày hiện tại, quá khứ trong tháng hiện tại hoặc phiên rạng sáng ngày mai (GMT+7)'
+                    : 'OT tách rời chỉ hỗ trợ ngày hiện tại, quá khứ trong tháng hiện tại của Ca 1/Ca 2 hoặc phiên rạng sáng ngày mai (GMT+7)',
+            };
         }
 
         if (!otStartTime) {
             return { valid: false, error: 'Vui lòng nhập giờ bắt đầu OT tách rời' };
         }
 
-        const startDate = resolveOtDate(date, otStartTime);
+        if (canAnchorSeparatedToPreviousDay && !hasEarlySeparatedStart && !hasEarlySeparatedEnd) {
+            return {
+                valid: false,
+                error: isSelectedTomorrow
+                    ? 'Đăng ký trước OT tách rời cho ngày mai chỉ hỗ trợ phiên rạng sáng 00:00-07:59'
+                    : 'Trong khung 00:00-07:59, OT tách rời chỉ hỗ trợ phiên rạng sáng neo vào ca ngày hôm trước',
+            };
+        }
+
+        if (canAnchorSeparatedToPreviousDay && hasEarlySeparatedStart !== hasEarlySeparatedEnd) {
+            return {
+                valid: false,
+                error: isSelectedTomorrow
+                    ? 'Đăng ký trước OT tách rời cho ngày mai yêu cầu cả giờ bắt đầu và kết thúc nằm trong 00:00-07:59'
+                    : 'OT tách rời rạng sáng yêu cầu cả giờ bắt đầu và kết thúc nằm trong 00:00-07:59',
+            };
+        }
+
+        const startDate = resolveOtDate(
+            date,
+            otStartTime,
+            canAnchorSeparatedToPreviousDay
+        );
         const startTime = parseVnDateTime(startDate, otStartTime);
         if (!startTime) {
             return { valid: false, error: 'Giờ bắt đầu OT không hợp lệ' };
         }
 
-        const threshold = selectedFixedShiftPolicy
-            ? parseVnDateTime(date, selectedFixedShiftPolicy.threshold)
+        const effectiveSeparatedPolicy = isCarryOverSeparatedActive
+            ? carryOverFixedShiftPolicy
+            : selectedFixedShiftPolicy;
+        const thresholdDate = isCarryOverSeparatedActive
+            ? carryOverAnchorDate
+            : date;
+
+        if (isCarryOverSeparatedActive) {
+            if (!attendanceContextLoaded) {
+                return {
+                    valid: false,
+                    error: isSelectedTomorrow
+                        ? 'Đang tải dữ liệu attendance của ca hôm nay, vui lòng thử lại sau ít giây'
+                        : 'Đang tải dữ liệu ca ngày trước, vui lòng thử lại sau ít giây',
+                };
+            }
+
+            if (!carryOverAnchorDate || !carryOverAttendanceItem?.checkInAt) {
+                return {
+                    valid: false,
+                    error: isSelectedTomorrow
+                        ? 'Chưa tìm thấy attendance ca hôm nay để đăng ký trước OT rạng sáng ngày mai'
+                        : 'Không tìm thấy ca ngày trước đã hoàn tất để neo OT tách rời rạng sáng',
+                };
+            }
+
+            if (!carryOverAttendanceItem?.checkOutAt) {
+                return {
+                    valid: false,
+                    error: isSelectedTomorrow
+                        ? 'Chưa thể đăng ký trước OT rạng sáng ngày mai vì ca hôm nay chưa check-out'
+                        : 'Không tìm thấy ca ngày trước đã hoàn tất để neo OT tách rời rạng sáng',
+                };
+            }
+        } else if (isFlexibleSelectedDay) {
+            if (!attendanceContextLoaded) {
+                return {
+                    valid: false,
+                    error: isPastDateWithinCurrentMonth
+                        ? 'Đang tải attendance của ngày quá khứ, vui lòng thử lại sau ít giây'
+                        : 'Đang tải attendance của ngày này, vui lòng thử lại sau ít giây',
+                };
+            }
+
+            if (!selectedAttendanceItem?.checkInAt || !selectedAttendanceItem?.checkOutAt) {
+                return {
+                    valid: false,
+                    error: isPastDateWithinCurrentMonth
+                        ? 'Ngày quá khứ của lịch Linh hoạt phải có attendance đã hoàn tất trước khi đăng ký OT tách rời'
+                        : 'Phải hoàn tất check-in và check-out của ngày này trước khi đăng ký OT tách rời cho lịch Linh hoạt',
+                };
+            }
+        } else if (allowsPastFixedSeparated) {
+            if (!attendanceContextLoaded) {
+                return {
+                    valid: false,
+                    error: 'Đang tải attendance của ngày quá khứ, vui lòng thử lại sau ít giây',
+                };
+            }
+
+            if (!selectedAttendanceItem?.checkInAt || !selectedAttendanceItem?.checkOutAt) {
+                return {
+                    valid: false,
+                    error: 'Ngày quá khứ của Ca 1/Ca 2 phải có attendance đã hoàn tất trước khi đăng ký OT tách rời',
+                };
+            }
+        }
+
+        const threshold = effectiveSeparatedPolicy && thresholdDate
+            ? parseVnDateTime(thresholdDate, effectiveSeparatedPolicy.threshold)
             : null;
         if (threshold && startTime < threshold) {
             return {
                 valid: false,
-                error: `Giờ bắt đầu OT tách rời phải từ ${selectedFixedShiftPolicy.threshold} (GMT+7)`,
+                error: `Giờ bắt đầu OT tách rời phải từ ${effectiveSeparatedPolicy.threshold} (GMT+7)`,
             };
         }
 
@@ -271,20 +661,70 @@ export default function OtRequestForm({
             return { valid: false, error: 'Thời gian OT tối thiểu là 30 phút' };
         }
 
-        if (isCrossMidnightOt(otStartTime) && otStartTime >= OT_CROSS_MIDNIGHT_CUTOFF) {
-            return { valid: false, error: 'Giờ bắt đầu OT qua đêm phải trước 08:00' };
-        }
-
-        if (isCrossMidnightOt(estimatedEndTime) && estimatedEndTime >= OT_CROSS_MIDNIGHT_CUTOFF) {
-            return { valid: false, error: 'Giờ kết thúc OT qua đêm phải trước 08:00' };
+        if (isCarryOverSeparatedActive) {
+            const checkoutAt = carryOverAttendanceItem?.checkOutAt
+                ? new Date(carryOverAttendanceItem.checkOutAt)
+                : null;
+            if (!checkoutAt || isNaN(checkoutAt.getTime())) {
+                return {
+                    valid: false,
+                    error: isSelectedTomorrow
+                        ? 'Không đọc được giờ check-out của ca hôm nay để kiểm tra đăng ký trước OT'
+                        : 'Không đọc được giờ check-out của ca ngày trước để kiểm tra OT tách rời',
+                };
+            }
+            if (startTime <= checkoutAt) {
+                return {
+                    valid: false,
+                    error: isSelectedTomorrow
+                        ? 'Giờ bắt đầu OT phải sau thời điểm check-out của ca hôm nay'
+                        : 'Giờ bắt đầu OT phải sau thời điểm check-out của ca ngày trước',
+                };
+            }
+        } else if (isFlexibleSelectedDay) {
+            const checkoutAt = selectedAttendanceItem?.checkOutAt
+                ? new Date(selectedAttendanceItem.checkOutAt)
+                : null;
+            if (!checkoutAt || isNaN(checkoutAt.getTime())) {
+                return {
+                    valid: false,
+                    error: 'Không đọc được giờ check-out thực tế để kiểm tra OT tách rời',
+                };
+            }
+            if (startTime <= checkoutAt) {
+                return {
+                    valid: false,
+                    error: 'Giờ bắt đầu OT phải sau thời điểm check-out thực tế',
+                };
+            }
+        } else if (allowsPastFixedSeparated) {
+            const checkoutAt = selectedAttendanceItem?.checkOutAt
+                ? new Date(selectedAttendanceItem.checkOutAt)
+                : null;
+            if (!checkoutAt || isNaN(checkoutAt.getTime())) {
+                return {
+                    valid: false,
+                    error: 'Không đọc được giờ check-out thực tế để kiểm tra OT tách rời quá khứ',
+                };
+            }
+            if (startTime <= checkoutAt) {
+                return {
+                    valid: false,
+                    error: 'Giờ bắt đầu OT phải sau thời điểm check-out thực tế của attendance ngày đó',
+                };
+            }
         }
 
         return {
             valid: true,
             error: '',
             otMinutes: minutes,
-            endOffsetDays: isCrossMidnightOt(estimatedEndTime) ? 1 : 0,
-            otStartOffsetDays: isCrossMidnightOt(otStartTime) ? 1 : 0,
+            endOffsetDays: isCarryOverSeparatedActive
+                ? 0
+                : isCrossMidnightOt(estimatedEndTime) ? 1 : 0,
+            otStartOffsetDays: isCarryOverSeparatedActive
+                ? 0
+                : isCrossMidnightOt(otStartTime) ? 1 : 0,
         };
     };
 
@@ -311,11 +751,16 @@ export default function OtRequestForm({
         setModalError('');
 
         try {
-            const endOffsetDays = isCrossMidnightOt(formData.estimatedEndTime) ? 1 : 0;
+            const endOffsetDays =
+                isCarryOverSeparatedActive
+                    ? 0
+                    : isCrossMidnightOt(effectiveEstimatedEndTimeValue) ? 1 : 0;
             const separatedStartOffsetDays =
-                otMode === OT_MODE_SEPARATED && isCrossMidnightOt(formData.otStartTime)
-                    ? 1
-                    : 0;
+                isCarryOverSeparatedActive
+                    ? 0
+                    : otMode === OT_MODE_SEPARATED && isCrossMidnightOt(formData.otStartTime)
+                        ? 1
+                        : 0;
 
             const payload = {
                 type: 'OT_REQUEST',
@@ -323,7 +768,7 @@ export default function OtRequestForm({
                 otMode,
                 estimatedEndTime: buildIsoTimestamp(
                     formData.date,
-                    formData.estimatedEndTime,
+                    effectiveEstimatedEndTimeValue,
                     endOffsetDays
                 ),
                 reason: formData.reason.trim(),
@@ -334,6 +779,12 @@ export default function OtRequestForm({
                     formData.date,
                     formData.otStartTime,
                     separatedStartOffsetDays
+                );
+            } else if (shouldShowContinuousOtStart && formData.otStartTime) {
+                payload.otStartTime = buildIsoTimestamp(
+                    formData.date,
+                    formData.otStartTime,
+                    0
                 );
             }
 
@@ -351,20 +802,59 @@ export default function OtRequestForm({
     };
 
     const preview = getPreviewRange();
-    const isCrossDayOt = isCrossMidnightOt(formData.estimatedEndTime);
+    const isCrossDayOt =
+        Boolean(effectiveEstimatedEndTimeValue) &&
+        !isCarryOverSeparatedActive &&
+        isCrossMidnightOt(effectiveEstimatedEndTimeValue);
     const nextDayDisplay = isCrossDayOt && formData.date ? getNextDayDisplay(formData.date) : '';
-    const isSeparated = otMode === OT_MODE_SEPARATED;
     const scheduleHelperText = (() => {
+        if (isCarryOverSeparatedActive && carryOverAnchorDate) {
+            if (carryOverFixedShiftPolicy) {
+                return `OT rạng sáng ngày ${actualOtDateDisplay} sẽ neo vào ${carryOverFixedShiftPolicy.label} ngày ${carryOverAnchorDisplay}.`;
+            }
+
+            return `OT rạng sáng ngày ${actualOtDateDisplay} sẽ neo vào attendance đã hoàn tất của ngày ${carryOverAnchorDisplay}.`;
+        }
+
+        if (isSelectedTomorrow && carryOverAnchorDate) {
+            return `Sau khi checkout ca ngày ${carryOverAnchorDisplay}, bạn có thể đăng ký trước OT rạng sáng ngày ${actualOtDateDisplay} trong khung 00:00-07:59.`;
+        }
+
+        if (canUseSameMorningCarryOverWindow) {
+            return 'Trong khung 00:00-07:59, OT tách rời hỗ trợ phiên rạng sáng và sẽ neo vào ca đã hoàn tất của ngày hôm trước.';
+        }
+
+        if (isFlexibleSelectedDay && otMode === OT_MODE_CONTINUOUS) {
+            return isPastSelectedDateWithinCurrentMonth
+                ? 'Lịch Linh hoạt: bạn có thể đăng ký OT cho ngày quá khứ trong tháng hiện tại. OT sẽ tính theo block từ giờ bắt đầu OT đến thời điểm checkout thực tế.'
+                : 'Lịch Linh hoạt: OT liên tục sẽ tính theo block từ giờ bắt đầu OT đến min(giờ checkout thực tế, giờ kết thúc đã đăng ký).';
+        }
+
+        if (isFlexibleSelectedDay && otMode === OT_MODE_SEPARATED) {
+            return isPastSelectedDateWithinCurrentMonth
+                ? 'Lịch Linh hoạt: OT tách rời cho ngày quá khứ chỉ hợp lệ khi attendance ngày đó đã hoàn tất.'
+                : 'Lịch Linh hoạt: OT tách rời là phiên làm thêm sau checkout của ngày đã chọn.';
+        }
+
+        if (shouldUseFixedPastContinuousCheckoutEnd && selectedFixedShiftPolicy) {
+            return `${selectedFixedShiftPolicy.label}: OT liên tục của ngày quá khứ sẽ đối chiếu theo giờ checkout thực tế của attendance đã hoàn tất.`;
+        }
+
+        if (isSeparated && isPastFixedShiftSelectedDay && selectedFixedShiftPolicy) {
+            return `${selectedFixedShiftPolicy.label}: OT tách rời của ngày quá khứ chỉ hợp lệ sau giờ checkout thực tế của attendance ngày đó.`;
+        }
+
         if (selectedFixedShiftPolicy) {
             return `${selectedFixedShiftPolicy.label}: OT bắt đầu từ ${selectedFixedShiftPolicy.threshold}, tối thiểu cùng ngày đến ${selectedFixedShiftPolicy.earliestEnd}.`;
         }
 
-        if (selectedScheduleItem?.scheduleType === 'FLEXIBLE' && selectedScheduleItem?.isWorkday) {
-            return 'Lịch Linh hoạt trong ngày làm việc hiện không hỗ trợ OT cố định.';
-        }
-
         return 'Hệ thống sẽ đối chiếu theo ca đã đăng ký của ngày này khi tạo yêu cầu.';
     })();
+
+    const separatedThresholdPolicy = isCarryOverSeparatedActive
+        ? carryOverFixedShiftPolicy
+        : selectedFixedShiftPolicy;
+    const shouldRenderOtStartInput = isSeparated || shouldShowContinuousOtStart;
 
     return (
         <>
@@ -399,35 +889,63 @@ export default function OtRequestForm({
                             type="date"
                             value={formData.date}
                             onChange={handleInputChange}
-                            min={today}
+                            min={currentMonthStart}
                             required
                         />
-                            <p className="text-xs text-gray-600 mt-1">
-                                {isSeparated
-                                    ? 'OT tách rời chỉ hỗ trợ ngày hiện tại (GMT+7), sau khi đã check-in và check-out ca chính'
-                                    : 'OT liên tục hỗ trợ ngày hiện tại hoặc tương lai'}
-                            </p>
-                            <p className="text-xs text-gray-600 mt-1">{scheduleHelperText}</p>
-                        </div>
+                        <p className="text-xs text-gray-600 mt-1">
+                            {isSeparated
+                                ? isCarryOverSeparatedActive && carryOverAnchorDate
+                                    ? `OT rạng sáng ngày ${actualOtDateDisplay} sẽ được neo vào ca ngày ${carryOverAnchorDisplay}`
+                                    : isSelectedTomorrow && carryOverAnchorDate
+                                        ? `Đăng ký trước OT rạng sáng ngày ${actualOtDateDisplay} sẽ đối chiếu vào ca ngày ${carryOverAnchorDisplay} sau khi bạn checkout`
+                                        : isFlexibleSelectedDay
+                                            ? 'OT tách rời lịch Linh hoạt hỗ trợ ngày hiện tại, quá khứ trong tháng hiện tại và phiên rạng sáng ngày mai sau checkout'
+                                            : isPastFixedShiftSelectedDay
+                                                ? 'OT tách rời của Ca 1/Ca 2 hỗ trợ ngày hiện tại, quá khứ trong tháng hiện tại khi attendance đã hoàn tất và phiên rạng sáng ngày mai sau checkout'
+                                                : 'OT tách rời hỗ trợ ngày hiện tại; sau khi checkout có thể đăng ký trước phiên rạng sáng ngày mai (00:00-07:59)'
+                                : isFlexibleSelectedDay
+                                    ? 'OT liên tục lịch Linh hoạt hỗ trợ ngày hiện tại, tương lai và ngày quá khứ trong tháng hiện tại'
+                                    : shouldUseFixedPastContinuousCheckoutEnd
+                                        ? 'OT liên tục của Ca 1/Ca 2 hỗ trợ ngày hiện tại, tương lai và ngày quá khứ trong tháng hiện tại'
+                                        : 'OT liên tục hỗ trợ ngày hiện tại hoặc tương lai'}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">{scheduleHelperText}</p>
+                    </div>
 
-                    {isSeparated && (
+                    {shouldRenderOtStartInput && (
                         <div>
-                            <Label htmlFor="ot-start-time" value="Giờ bắt đầu OT *" />
+                            <Label
+                                htmlFor="ot-start-time"
+                                value={isSeparated ? 'Giờ bắt đầu OT *' : 'Giờ bắt đầu OT linh hoạt *'}
+                            />
                             <TextInput
                                 id="ot-start-time"
                                 name="otStartTime"
                                 type="time"
                                 value={formData.otStartTime || ''}
                                 onChange={handleInputChange}
-                                required={isSeparated}
+                                required={shouldRenderOtStartInput}
                             />
                             <div className="text-xs text-gray-600 mt-1 space-y-1">
-                                <p>
-                                    {selectedFixedShiftPolicy
-                                        ? `Giờ bắt đầu phải từ ${selectedFixedShiftPolicy.threshold} (GMT+7)`
-                                        : 'Giờ bắt đầu sẽ được kiểm tra theo ca đã đăng ký'}
-                                </p>
-                                <p>Giờ 00:00-07:59 sẽ được tính là ngày hôm sau</p>
+                                {isSeparated ? (
+                                    <>
+                                        <p>
+                                            {separatedThresholdPolicy
+                                                ? `Giờ bắt đầu phải từ ${separatedThresholdPolicy.threshold} (GMT+7)`
+                                                : 'Giờ bắt đầu sẽ được kiểm tra theo attendance đã hoàn tất của ngày này'}
+                                        </p>
+                                        <p>
+                                            {canAnchorSeparatedToPreviousDay
+                                                ? 'Trong khung 00:00-07:59, giờ sẽ giữ trên ngày đã chọn và hệ thống sẽ neo vào ca ngày hôm trước'
+                                                : 'Giờ 00:00-07:59 sẽ được tính là ngày hôm sau'}
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p>OT linh hoạt sẽ tính từ giờ bắt đầu này đến min(checkout thực tế, giờ kết thúc đã đăng ký)</p>
+                                        <p>Giờ bắt đầu nên nằm trong cùng ngày làm việc đã chọn</p>
+                                    </>
+                                )}
                             </div>
                         </div>
                     )}
@@ -438,19 +956,33 @@ export default function OtRequestForm({
                             id="ot-time"
                             name="estimatedEndTime"
                             type="time"
-                            value={formData.estimatedEndTime}
+                            value={effectiveEstimatedEndTimeValue}
                             onChange={handleInputChange}
                             required
+                            readOnly={shouldUseFixedPastContinuousCheckoutEnd}
                         />
                         <div className="text-xs text-gray-600 mt-1 space-y-1">
-                            {!isSeparated && (
+                            {!isSeparated && !shouldShowContinuousOtStart && (
                                 <p>
-                                    {selectedFixedShiftPolicy
+                                    {shouldUseFixedPastContinuousCheckoutEnd && selectedActualCheckoutTimeKey
+                                        ? `Giờ kết thúc OT đang khóa theo checkout thực tế: ${selectedActualCheckoutTimeKey}`
+                                        : selectedFixedShiftPolicy
                                         ? `OT liên tục cùng ngày tối thiểu đến ${selectedFixedShiftPolicy.earliestEnd}`
                                         : 'OT liên tục cùng ngày sẽ được đối chiếu theo ca đã đăng ký'}
                                 </p>
                             )}
-                            <p>Giờ 00:00-07:59 sẽ được tính là ngày hôm sau</p>
+                            {!isSeparated && shouldShowContinuousOtStart && (
+                                <p>
+                                    Giờ kết thúc của OT linh hoạt có thể qua ngày hôm sau, nhưng nếu checkout sớm hơn thì OT sẽ bị cắt theo checkout thực tế
+                                </p>
+                            )}
+                            <p>
+                                {isCarryOverSeparatedActive
+                                    ? 'Giờ kết thúc đang được hiểu theo ngày OT thực tế đã chọn'
+                                    : isSelectedTomorrow
+                                        ? 'Khi đăng ký trước cho ngày mai, giờ 00:00-07:59 sẽ giữ trên ngày OT thực tế đã chọn'
+                                    : 'Giờ 00:00-07:59 sẽ được tính là ngày hôm sau'}
+                            </p>
                             <p>Tối thiểu 30 phút</p>
                         </div>
                         {formData.date && isCrossDayOt && (
@@ -460,7 +992,7 @@ export default function OtRequestForm({
                         )}
                     </div>
 
-                    {formData.date && formData.estimatedEndTime && Number.isFinite(preview.minutes) && preview.minutes > 0 && (
+                    {formData.date && effectiveEstimatedEndTimeValue && Number.isFinite(preview.minutes) && preview.minutes > 0 && (
                         <Alert color={preview.minutes >= 30 ? 'success' : 'warning'}>
                             <div className="flex items-center">
                                 <span className="font-semibold mr-2">Thời gian OT dự kiến:</span>
@@ -493,7 +1025,25 @@ export default function OtRequestForm({
                                     <>
                                         <li>Phải hoàn tất check-in và check-out ca chính trước khi đăng ký</li>
                                         <li>Giờ bắt đầu OT phải sau thời điểm check-out ca chính</li>
+                                        {isCarryOverSeparatedActive && carryOverAnchorDate && (
+                                            <li>
+                                                Phiên rạng sáng sẽ được neo vào attendance ngày {carryOverAnchorDisplay}
+                                                {isTomorrowPreRegisterActive ? ' và được tạo trước cho ngày hôm sau' : ''}
+                                            </li>
+                                        )}
                                         <li>Yêu cầu vẫn cần manager phê duyệt</li>
+                                    </>
+                                ) : shouldShowContinuousOtStart ? (
+                                    <>
+                                        <li>OT lịch Linh hoạt sẽ tính theo block từ giờ bắt đầu OT đến min(checkout thực tế, giờ kết thúc đã đăng ký)</li>
+                                        <li>Ngày quá khứ trong tháng hiện tại chỉ hợp lệ khi attendance ngày đó đã hoàn tất</li>
+                                        <li>Sau khi yêu cầu được duyệt, OT của ngày quá khứ sẽ được áp ngay vào attendance của ngày đó</li>
+                                    </>
+                                ) : shouldUseFixedPastContinuousCheckoutEnd ? (
+                                    <>
+                                        <li>OT liên tục quá khứ của Ca 1/Ca 2 sẽ đối chiếu theo giờ checkout thực tế của attendance ngày đó</li>
+                                        <li>Giờ kết thúc OT đang khóa theo checkout thực tế; nếu checkout sang hôm sau thì phải trước 08:00</li>
+                                        <li>Sau khi yêu cầu được duyệt, OT của ngày quá khứ sẽ được áp ngay vào attendance của ngày đó</li>
                                     </>
                                 ) : (
                                     <>
@@ -542,26 +1092,42 @@ export default function OtRequestForm({
                                 </div>
 
                                 <div className="flex justify-between">
-                                    <span className="text-gray-600">Ngày:</span>
+                                    <span className="text-gray-600">
+                                        {isSeparated ? 'Ngày OT thực tế:' : 'Ngày:'}
+                                    </span>
                                     <span className="font-medium">
-                                        {new Date(formData.date + 'T00:00:00+07:00').toLocaleDateString('vi-VN')}
+                                        {formatDisplayDate(formData.date)}
                                     </span>
                                 </div>
+
+                                {isCarryOverSeparatedActive && carryOverAnchorDate && (
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Ngày neo ca chính:</span>
+                                        <span className="font-medium">{carryOverAnchorDisplay}</span>
+                                    </div>
+                                )}
 
                                 {isSeparated && (
                                     <div className="flex justify-between">
                                         <span className="text-gray-600">Bắt đầu OT:</span>
                                         <span className="font-medium">
                                             {formData.otStartTime}
-                                            {isCrossMidnightOt(formData.otStartTime) && nextDayDisplay && ` (ngày ${nextDayDisplay})`}
+                                            {!isCarryOverSeparatedActive && isCrossMidnightOt(formData.otStartTime) && nextDayDisplay && ` (ngày ${nextDayDisplay})`}
                                         </span>
+                                    </div>
+                                )}
+
+                                {!isSeparated && shouldShowContinuousOtStart && (
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Bắt đầu OT:</span>
+                                        <span className="font-medium">{formData.otStartTime}</span>
                                     </div>
                                 )}
 
                                 <div className="flex justify-between">
                                     <span className="text-gray-600">Kết thúc OT:</span>
                                     <span className="font-medium">
-                                        {formData.estimatedEndTime}
+                                        {effectiveEstimatedEndTimeValue}
                                         {isCrossDayOt && nextDayDisplay && ` (ngày ${nextDayDisplay})`}
                                     </span>
                                 </div>
@@ -596,7 +1162,25 @@ export default function OtRequestForm({
                                 <ul className="list-disc list-inside space-y-1 text-xs">
                                     <li>Yêu cầu OT cần quản lý phê duyệt</li>
                                     {isSeparated ? (
-                                        <li>OT tách rời chỉ hợp lệ sau khi đã hoàn tất ca chính</li>
+                                        <>
+                                            <li>OT tách rời chỉ hợp lệ sau khi đã hoàn tất ca chính</li>
+                                            {isCarryOverSeparatedActive && carryOverAnchorDate && (
+                                                <li>
+                                                    Phiên rạng sáng này sẽ được neo vào attendance ngày {carryOverAnchorDisplay}
+                                                    {isTomorrowPreRegisterActive ? ' và vẫn được tính vào ngày neo này' : ''}
+                                                </li>
+                                            )}
+                                        </>
+                                    ) : shouldShowContinuousOtStart ? (
+                                        <>
+                                            <li>OT lịch Linh hoạt sẽ được tính theo block đã đăng ký và bị cắt theo checkout thực tế</li>
+                                            <li>Nếu đây là ngày quá khứ trong tháng hiện tại, attendance ngày đó sẽ được cập nhật ngay sau khi duyệt</li>
+                                        </>
+                                    ) : shouldUseFixedPastContinuousCheckoutEnd ? (
+                                        <>
+                                            <li>OT liên tục quá khứ của Ca 1/Ca 2 sẽ được đối chiếu theo giờ checkout thực tế của attendance ngày đó</li>
+                                            <li>Nếu checkout thực tế thay đổi sau khi tạo yêu cầu, manager sẽ không thể duyệt request cũ</li>
+                                        </>
                                     ) : (
                                         <li>OT liên tục cần tạo trước khi checkout</li>
                                     )}

@@ -1,5 +1,6 @@
 import { Table, Button, Pagination, Badge } from 'flowbite-react';
 import { HiCheck, HiX } from 'react-icons/hi';
+import { getOtRequestDateMeta } from '../../utils/dateDisplay';
 
 /**
  * Table displaying pending requests for approval.
@@ -121,6 +122,32 @@ export default function PendingRequestsTable({
         return <Badge color="indigo">Điều chỉnh</Badge>;
     };
 
+    const renderRequestDateCell = (request) => {
+        if (request?.type === 'LEAVE') {
+            return (
+                <span>
+                    {formatDate(request.leaveStartDate)} → {formatDate(request.leaveEndDate)}
+                </span>
+            );
+        }
+
+        if (request?.type !== 'OT_REQUEST') {
+            return formatDate(request?.date);
+        }
+
+        const { actualDate, anchorDate, isSeparatedCarryOver } = getOtRequestDateMeta(request);
+        if (!isSeparatedCarryOver) {
+            return formatDate(anchorDate);
+        }
+
+        return (
+            <div className="flex flex-col gap-1">
+                <span>{formatDate(actualDate)}</span>
+                <span className="text-xs text-gray-500">Neo ca: {formatDate(anchorDate)}</span>
+            </div>
+        );
+    };
+
     return (
         <>
             <div className="overflow-x-auto">
@@ -142,7 +169,10 @@ export default function PendingRequestsTable({
                                 </Table.Cell>
                             </Table.Row>
                         ) : (
-                            safeRequests.map((req) => (
+                            safeRequests.map((req) => {
+                                const otDateMeta = getOtRequestDateMeta(req);
+
+                                return (
                                 <Table.Row key={req._id} className="bg-white">
                                     {/* Employee Info */}
                                     <Table.Cell className="font-medium">
@@ -159,13 +189,7 @@ export default function PendingRequestsTable({
 
                                     {/* Date / Range */}
                                     <Table.Cell className="whitespace-nowrap">
-                                        {req.type === 'LEAVE' ? (
-                                            <span>
-                                                {formatDate(req.leaveStartDate)} → {formatDate(req.leaveEndDate)}
-                                            </span>
-                                        ) : (
-                                            formatDate(req.date)
-                                        )}
+                                        {renderRequestDateCell(req)}
                                     </Table.Cell>
 
                                     {/* Details (Time or Leave Info or OT Info) */}
@@ -187,9 +211,19 @@ export default function PendingRequestsTable({
                                                         <span className="ml-2 font-medium">{req.userId?.name || 'N/A'}</span>
                                                     </div>
                                                     <div>
-                                                        <span className="text-gray-600">Ngày:</span>
-                                                        <span className="ml-2 font-medium">{formatDate(req.date)}</span>
+                                                        <span className="text-gray-600">
+                                                            {otDateMeta.isSeparatedCarryOver ? 'Ngày OT thực tế:' : 'Ngày:'}
+                                                        </span>
+                                                        <span className="ml-2 font-medium">
+                                                            {formatDate(otDateMeta.actualDate || req.date)}
+                                                        </span>
                                                     </div>
+                                                    {otDateMeta.isSeparatedCarryOver && (
+                                                        <div>
+                                                            <span className="text-gray-600">Ngày neo ca:</span>
+                                                            <span className="ml-2 font-medium">{formatDate(otDateMeta.anchorDate)}</span>
+                                                        </div>
+                                                    )}
                                                     <div>
                                                         <span className="text-gray-600">Dự kiến về:</span>
                                                         <span className="ml-2 font-medium">
@@ -222,7 +256,9 @@ export default function PendingRequestsTable({
                                                 <div className="text-xs text-purple-700 bg-purple-50 p-2 rounded border border-purple-200">
                                                     <strong>Lưu ý quản lý:</strong>{' '}
                                                     {req.otMode === 'SEPARATED'
-                                                        ? 'Phiên tách rời yêu cầu nhân viên đã hoàn tất ca chính trước khi đăng ký.'
+                                                        ? otDateMeta.isSeparatedCarryOver
+                                                            ? 'Phiên tách rời rạng sáng này đang neo vào attendance của ngày trước.'
+                                                            : 'Phiên tách rời yêu cầu nhân viên đã hoàn tất ca chính trước khi đăng ký.'
                                                         : 'Nhân viên cần approval trước checkout để được tính OT.'}
                                                 </div>
                                             </div>
@@ -274,7 +310,8 @@ export default function PendingRequestsTable({
                                         </div>
                                     </Table.Cell>
                                 </Table.Row>
-                            ))
+                            );
+                            })
                         )}
                     </Table.Body>
                 </Table>

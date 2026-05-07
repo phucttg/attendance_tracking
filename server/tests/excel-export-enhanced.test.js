@@ -112,7 +112,7 @@ afterAll(async () => {
 });
 
 describe('Excel Export Enhanced Format', () => {
-    it('contains summary sheet with title/subtitle/header and 16 columns', async () => {
+    it('contains summary sheet with title/subtitle/header and 17 columns', async () => {
         const res = await request(app)
             .get('/api/reports/monthly/export?month=2026-02&scope=company')
             .set('Authorization', `Bearer ${adminToken}`)
@@ -126,13 +126,14 @@ describe('Excel Export Enhanced Format', () => {
         expect(summarySheet.getRow(1).getCell(1).value).toBe('BÁO CÁO CHẤM CÔNG THÁNG 02/2026');
         expect(summarySheet.getRow(2).getCell(1).value).toBe('Phạm vi: Toàn công ty');
 
-        const headers = summarySheet.getRow(3).values.slice(1, 17);
+        const headers = summarySheet.getRow(3).values.slice(1, 18);
         expect(headers).toEqual([
             'Mã NV',
             'Tên NV',
             'Phòng ban',
             'Ngày công tháng',
             'Có mặt',
+            'Chưa đăng ký ca',
             'Vắng mặt',
             'Nghỉ phép (tổng)',
             'Phép năm',
@@ -158,15 +159,15 @@ describe('Excel Export Enhanced Format', () => {
         const summarySheet = workbook.getWorksheet('Báo cáo tổng hợp');
         expect(summarySheet).toBeDefined();
 
-        expect(summarySheet.getColumn(11).numFmt).toBe('0.0');
-        expect(summarySheet.getColumn(15).numFmt).toBe('0.0');
+        expect(summarySheet.getColumn(12).numFmt).toBe('0.0');
         expect(summarySheet.getColumn(16).numFmt).toBe('0.0');
+        expect(summarySheet.getColumn(17).numFmt).toBe('0.0');
 
         // Data rows are between header (row 3) and summary row (last row)
         for (let rowIndex = 4; rowIndex < summarySheet.rowCount; rowIndex += 1) {
-            expect(typeof summarySheet.getRow(rowIndex).getCell(11).value).toBe('number');
-            expect(typeof summarySheet.getRow(rowIndex).getCell(15).value).toBe('number');
+            expect(typeof summarySheet.getRow(rowIndex).getCell(12).value).toBe('number');
             expect(typeof summarySheet.getRow(rowIndex).getCell(16).value).toBe('number');
+            expect(typeof summarySheet.getRow(rowIndex).getCell(17).value).toBe('number');
         }
     });
 

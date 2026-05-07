@@ -65,6 +65,46 @@ describe('schedule policy + computeAttendance', () => {
     expect(result.workMinutes).toBe(510);
   });
 
+  it('FLEXIBLE continuous OT uses the approved OT window and truncates by actual checkout', () => {
+    const dateKey = '2026-03-25';
+    const flexible = buildAttendanceScheduleSnapshot('FLEXIBLE', 'REGISTERED');
+
+    expect(
+      computeOtMinutes(
+        dateKey,
+        createTimeInGMT7(dateKey, 19, 30),
+        true,
+        'CONTINUOUS',
+        0,
+        flexible,
+        {
+          checkInAt: createTimeInGMT7(dateKey, 8, 30),
+          approvedOtStartTime: createTimeInGMT7(dateKey, 18, 0),
+          approvedOtEndTime: createTimeInGMT7(dateKey, 22, 0)
+        }
+      )
+    ).toBe(90);
+  });
+
+  it('computeAttendance includes flexible continuous OT from attendance snapshot fields', () => {
+    const dateKey = '2026-03-25';
+    const result = computeAttendance({
+      date: dateKey,
+      checkInAt: createTimeInGMT7(dateKey, 8, 30),
+      checkOutAt: createTimeInGMT7(dateKey, 19, 30),
+      otApproved: true,
+      otMode: 'CONTINUOUS',
+      approvedOtStartTime: createTimeInGMT7(dateKey, 18, 0),
+      approvedOtEndTime: createTimeInGMT7(dateKey, 22, 0),
+      scheduleType: 'FLEXIBLE',
+      ...buildAttendanceScheduleSnapshot('FLEXIBLE', 'REGISTERED')
+    });
+
+    expect(result.status).toBe('ON_TIME');
+    expect(result.workMinutes).toBe(600);
+    expect(result.otMinutes).toBe(90);
+  });
+
   it('SHIFT_1: ignores pre-shift time and keeps regular work inside the shift window', () => {
     const dateKey = '2026-04-07';
     const shift1 = buildAttendanceScheduleSnapshot('SHIFT_1', 'REGISTERED');

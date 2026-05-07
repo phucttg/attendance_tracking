@@ -16,6 +16,9 @@ node_modules/
 .DS_Store
 **/.DS_Store
 
+# Claude Code internal data
+.claude/
+
 # Logs
 logs/
 *.log

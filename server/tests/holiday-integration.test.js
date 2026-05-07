@@ -75,7 +75,8 @@ describe('Holiday Integration - Happy Paths', () => {
         expect(record.status).toBe('WEEKEND_OR_HOLIDAY');
     });
 
-    it('2. Workday without holiday → ON_TIME status', async () => {
+    it('2. Workday without holiday defaults to SHIFT_1 late status', async () => {
+        // No schedule snapshot is provided, so legacy/default SHIFT_1 applies.
         await Attendance.create({
             userId: employeeId, date: WORKDAY_NORMAL,
             checkInAt: new Date(`${WORKDAY_NORMAL}T08:30:00+07:00`),
@@ -88,7 +89,8 @@ describe('Holiday Integration - Happy Paths', () => {
 
         expect(res.status).toBe(200);
         const record = res.body.items.find(i => i.date === WORKDAY_NORMAL);
-        expect(record.status).toBe('ON_TIME');
+        expect(record.status).toBe('LATE');
+        expect(record.lateMinutes).toBe(30);
     });
 });
 
@@ -170,7 +172,8 @@ describe('Holiday Integration - Edge Cases', () => {
         expect(record.status).toBe('WEEKEND_OR_HOLIDAY');
     });
 
-    it('7. Month with no holidays → normal status', async () => {
+    it('7. Month with no holidays → default SHIFT_1 late status', async () => {
+        // No schedule snapshot is provided, so legacy/default SHIFT_1 applies.
         await Attendance.create({
             userId: employeeId, date: WORKDAY_NORMAL,
             checkInAt: new Date(`${WORKDAY_NORMAL}T08:30:00+07:00`),
@@ -182,7 +185,8 @@ describe('Holiday Integration - Edge Cases', () => {
             .set('Authorization', `Bearer ${employeeToken}`);
 
         const record = res.body.items.find(i => i.date === WORKDAY_NORMAL);
-        expect(record.status).toBe('ON_TIME');
+        expect(record.status).toBe('LATE');
+        expect(record.lateMinutes).toBe(30);
     });
 
     it('8. Check-in on holiday → still WEEKEND_OR_HOLIDAY (not LATE)', async () => {

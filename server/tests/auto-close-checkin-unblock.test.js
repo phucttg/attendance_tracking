@@ -20,6 +20,7 @@ import bcrypt from 'bcrypt';
 import app from '../src/app.js';
 import User from '../src/models/User.js';
 import Attendance from '../src/models/Attendance.js';
+import WorkScheduleRegistration from '../src/models/WorkScheduleRegistration.js';
 import { autoCloseOpenSessionsBeforeToday } from '../src/services/autoCloseService.js';
 import { createTimeInGMT7, getDateKey } from '../src/utils/dateUtils.js';
 import { daysAgoKey } from './testDateHelper.js';
@@ -39,6 +40,14 @@ function todayKey() {
     return getDateKey(new Date());
 }
 
+async function ensureTodaySchedule(scheduleType = 'SHIFT_1') {
+    await WorkScheduleRegistration.updateOne(
+        { userId: employeeId, workDate: todayKey() },
+        { $set: { scheduleType }, $setOnInsert: { lockedAt: new Date() } },
+        { upsert: true }
+    );
+}
+
 beforeAll(async () => {
     await mongoose.connect(
         process.env.MONGO_URI?.replace(/\/[^/]+$/, '/auto_close_unblock_test_db')
@@ -47,6 +56,7 @@ beforeAll(async () => {
 
     await User.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
 
     const passwordHash = await bcrypt.hash('Password123', 10);
 
@@ -71,11 +81,13 @@ beforeAll(async () => {
 afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
     await mongoose.connection.close();
 });
 
 beforeEach(async () => {
     await Attendance.deleteMany({});
+    await WorkScheduleRegistration.deleteMany({});
 });
 
 // ============================================================================
@@ -111,6 +123,7 @@ describe('Auto-close unblocks check-in (State Transition)', () => {
         expect(closeResult.closed).toBe(1);
 
         // STEP 3: Check-in is now allowed
+        await ensureTodaySchedule();
         const allowedRes = await request(app)
             .post('/api/attendance/check-in')
             .set('Authorization', `Bearer ${employeeToken}`);
@@ -140,6 +153,7 @@ describe('Auto-close unblocks check-in (State Transition)', () => {
             needsReconciliation: true
         });
 
+        await ensureTodaySchedule();
         const res = await request(app)
             .post('/api/attendance/check-in')
             .set('Authorization', `Bearer ${employeeToken}`);
@@ -177,6 +191,7 @@ describe('Auto-close unblocks check-in (State Transition)', () => {
         expect(closeResult.closed).toBe(2);
 
         // Check-in should succeed now
+        await ensureTodaySchedule();
         const allowedRes = await request(app)
             .post('/api/attendance/check-in')
             .set('Authorization', `Bearer ${employeeToken}`);
