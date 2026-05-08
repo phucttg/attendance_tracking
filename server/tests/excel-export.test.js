@@ -23,9 +23,6 @@ let adminToken, managerToken, managerNoTeamToken, employeeToken;
 let teamId, employeeId;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/excel_export_test_db')
-        || 'mongodb://localhost:27017/excel_export_test_db');
-
     // Clean up
     await User.deleteMany({});
     await Team.deleteMany({});
@@ -114,7 +111,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 

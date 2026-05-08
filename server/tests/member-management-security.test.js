@@ -29,9 +29,6 @@ let adminToken, managerToken, employeeToken, managerNoTeamToken;
 let team1Id, team2Id, employeeId, employee2Id, adminId;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/security_test_db')
-        || 'mongodb://localhost:27017/security_test_db');
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
@@ -85,7 +82,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 

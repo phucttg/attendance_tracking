@@ -66,11 +66,6 @@ const GRACE_HOURS = getCheckoutGraceHours();
 const MAX_DAYS = getAdjustRequestMaxDays();
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/forgot_checkout_request_test_db')
-        ?? 'mongodb://localhost:27017/forgot_checkout_request_test_db'
-    );
-
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
@@ -116,7 +111,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

@@ -232,8 +232,6 @@ export function computeAttendance(attendance, holidayDates = new Set(), leaveDat
       dateKey,
       checkIn,
       checkOut,
-      otApproved,
-      otMode,
       scheduleSnapshot
     );
     const otMinutes = computeOtMinutes(
@@ -327,8 +325,6 @@ export function computeLateMinutes(dateKey, checkInAt, scheduleSnapshot = null) 
  * @param {string} dateKey
  * @param {Date} checkInAt
  * @param {Date} checkOutAt
- * @param {boolean} otApproved
- * @param {'CONTINUOUS'|'SEPARATED'} otMode
  * @param {Object|null} scheduleSnapshot
  * @param {{forceNoShiftCap?: boolean}} options
  * @returns {number}
@@ -337,8 +333,6 @@ export function computeWorkMinutes(
   dateKey,
   checkInAt,
   checkOutAt,
-  otApproved = false,
-  otMode = 'CONTINUOUS',
   scheduleSnapshot = null,
   options = {}
 ) {
@@ -453,8 +447,6 @@ export function computeWeekendOtMinutes(dateKey, checkInAt, checkOutAt, schedule
     dateKey,
     checkInAt,
     checkOutAt,
-    true,
-    'CONTINUOUS',
     scheduleSnapshot,
     { forceNoShiftCap: true }
   );

@@ -20,9 +20,6 @@ let employeeToken;
 let employeeId;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/bug1_timezone_test_db')
-        || 'mongodb://localhost:27017/bug1_timezone_test_db');
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Request.deleteMany({});
@@ -51,7 +48,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

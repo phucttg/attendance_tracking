@@ -49,11 +49,6 @@ async function ensureTodaySchedule(scheduleType = 'SHIFT_1') {
 }
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/auto_close_unblock_test_db')
-        ?? 'mongodb://localhost:27017/auto_close_unblock_test_db'
-    );
-
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await WorkScheduleRegistration.deleteMany({});
@@ -82,7 +77,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await WorkScheduleRegistration.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

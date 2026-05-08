@@ -12,10 +12,6 @@ describe('Monthly report weekend OT classification', () => {
   let userId;
 
   beforeAll(async () => {
-    await mongoose.connect(
-      process.env.MONGO_URI?.replace(/\/[^/]+$/, '/report_weekend_ot_test_db')
-      || 'mongodb://localhost:27017/report_weekend_ot_test_db'
-    );
   });
 
   afterAll(async () => {
@@ -26,7 +22,6 @@ describe('Monthly report weekend OT classification', () => {
       $or: [{ employeeCode: /^WKOT/ }, { email: /^wkot\d+@example\.com$/ }]
     });
     await Team.deleteMany({ name: /^WKOT/ });
-    await mongoose.connection.close();
   });
 
   beforeEach(async () => {

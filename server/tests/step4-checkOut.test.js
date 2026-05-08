@@ -36,10 +36,6 @@ let graceMs;
 
 beforeAll(async () => {
     // Use separate test database to avoid deleting production data
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/step4_checkout_test_db')
-    );
-
     // Clean up
     await User.deleteMany({});
     await Attendance.deleteMany({});
@@ -73,7 +69,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await AuditLog.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

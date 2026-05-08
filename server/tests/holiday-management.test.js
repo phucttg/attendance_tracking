@@ -23,9 +23,6 @@ import bcrypt from 'bcrypt';
 let adminToken, managerToken, employeeToken;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/holiday_api_test_db')
-        || 'mongodb://localhost:27017/holiday_api_test_db');
-
     // Clean up
     await User.deleteMany({});
     await Holiday.deleteMany({});
@@ -83,7 +80,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Holiday.deleteMany({});
     await HolidayChangeLog.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

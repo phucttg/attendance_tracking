@@ -20,9 +20,6 @@ let managerToken;
 let employeeId;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/bug2_anchor_test_db')
-        || 'mongodb://localhost:27017/bug2_anchor_test_db');
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Request.deleteMany({});
@@ -63,7 +60,6 @@ afterAll(async () => {
     await Team.deleteMany({});
     await Request.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

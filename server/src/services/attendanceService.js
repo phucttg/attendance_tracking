@@ -3,7 +3,7 @@ import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import Request from '../models/Request.js';
 import WorkScheduleRegistration from '../models/WorkScheduleRegistration.js';
-import { getDateRange, getTodayDateKey, isWeekend } from '../utils/dateUtils.js';
+import { getTodayDateKey, isWeekend } from '../utils/dateUtils.js';
 import { computeAttendance } from '../utils/attendanceCompute.js';
 import { clampPage } from '../utils/pagination.js';
 import { getAdjustRequestMaxDays, getAdjustRequestMaxMs, getCheckoutGraceMs } from '../utils/graceConfig.js';
@@ -520,7 +520,6 @@ export const getTodayActivity = async (scope, teamId, holidayDates = new Set(), 
     const attendance = attendanceMap.get(String(user._id)) || null;
     const registeredScheduleType = scheduleMap.get(String(user._id)) || null;
     const hasValidScheduleRegistration = Boolean(isTodayWorkday && registeredScheduleType);
-    const isTodayWeekendOrHoliday = !isTodayWorkday;
 
     // Compute status following RULES.md priority
     let status = null;

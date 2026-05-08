@@ -24,10 +24,6 @@ let adminToken, managerToken, employeeToken, managerNoTeamToken;
 let teamId, team2Id, employeeId, employee2Id;
 
 beforeAll(async () => {
-    // Use separate database for this test file to avoid conflicts
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/edge_case_test_db')
-        || 'mongodb://localhost:27017/edge_case_test_db');
-
     // Clean up
     await User.deleteMany({});
     await Team.deleteMany({});
@@ -124,7 +120,6 @@ afterAll(async () => {
     await Team.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 // ============================================
@@ -290,6 +285,10 @@ describe('Decision Table - Request Time Validation', () => {
         });
     });
 
+    beforeEach(async () => {
+        await Request.deleteMany({ userId: employeeId });
+    });
+
     it('Rule 1: Both times provided, checkOut > checkIn → 201', async () => {
         const res = await request(app)
             .post('/api/requests')
@@ -352,7 +351,7 @@ describe('Decision Table - Request Time Validation', () => {
      * Expected: 201 CREATED (Policy A: True cross-midnight support)
      */
     it('Rule 5a: Cross-midnight within grace → 201', async () => {
-        const { checkInDate, checkOutDate } = recentCrossMidnightPair(6);
+        const { checkInDate, checkOutDate } = recentCrossMidnightPair(2);
         
         const res = await request(app)
             .post('/api/requests')

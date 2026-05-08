@@ -30,9 +30,6 @@ let adminToken, admin2Token, managerToken, employeeToken;
 let team1Id, team2Id, employeeId, employee2Id, adminId, admin2Id;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/adv_security_test_db')
-        || 'mongodb://localhost:27017/adv_security_test_db');
-
     await User.deleteMany({});
     await Team.deleteMany({});
 
@@ -88,7 +85,6 @@ beforeAll(async () => {
 afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
-    await mongoose.connection.close();
 });
 
 // Helper function: Check no passwordHash at any depth

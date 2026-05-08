@@ -23,10 +23,6 @@ const getPayloadItems = (dates, overrides = {}) =>
 let employeeId;
 
 beforeAll(async () => {
-  await mongoose.connect(
-    process.env.MONGO_URI?.replace(/\/[^/]+$/, '/work_schedule_locking_test_db')
-  );
-
   await Attendance.deleteMany({});
   await Request.deleteMany({});
   await User.deleteMany({});
@@ -49,7 +45,6 @@ afterAll(async () => {
   await Request.deleteMany({});
   await User.deleteMany({});
   await WorkScheduleRegistration.deleteMany({});
-  await mongoose.connection.close();
 });
 
 beforeEach(async () => {

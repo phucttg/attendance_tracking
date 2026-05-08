@@ -85,11 +85,6 @@ let teamId;
 let otherTeamId;
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/forgot_checkout_approval_test_db')
-        ?? 'mongodb://localhost:27017/forgot_checkout_approval_test_db'
-    );
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
@@ -179,7 +174,6 @@ afterAll(async () => {
     await Team.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

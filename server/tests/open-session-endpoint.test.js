@@ -63,11 +63,6 @@ let employeeId;
 let adminToken;
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/open_session_endpoint_test_db')
-        ?? 'mongodb://localhost:27017/open_session_endpoint_test_db'
-    );
-
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
@@ -112,7 +107,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

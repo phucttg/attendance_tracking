@@ -61,11 +61,6 @@ beforeAll(async () => {
     console.log(`🕐 Time frozen at: ${FIXED_TIME.toISOString()} (${new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' })} GMT+7)`);
 
     // STEP 2: Connect to isolated test database
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/cross_midnight_test_db') ||
-        'mongodb://localhost:27017/cross_midnight_test_db'
-    );
-
     // STEP 3: Clean slate
     await User.deleteMany({});
     await Attendance.deleteMany({});
@@ -125,7 +120,6 @@ afterAll(async () => {
     await WorkScheduleRegistration.deleteMany({});
 
     // STEP 3: Close connection
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

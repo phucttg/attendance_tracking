@@ -26,10 +26,6 @@ describe('OT Request API Integration', () => {
     vi.setSystemTime(FIXED_TIME);
 
     // Connect to test database
-    await mongoose.connect(
-      process.env.MONGO_URI?.replace(/\/[^/]+$/, '/ot_request_test') || 
-      'mongodb://localhost:27017/ot_request_test'
-    );
   });
 
   afterAll(async () => {
@@ -41,7 +37,6 @@ describe('OT Request API Integration', () => {
     await Attendance.deleteMany({});
     await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^TEST_OT/ });
-    await mongoose.connection.close();
   });
 
   beforeEach(async () => {
