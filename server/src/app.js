@@ -18,8 +18,12 @@ const app = express();
 
 app.set('trust proxy', parseTrustProxy());
 
-// Enable CORS so frontend (different port/domain) can call this API
-app.use(cors());
+// Enable CORS — restrict to allowed origins via ALLOWED_ORIGINS env var (comma-separated)
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
 
 // Health check endpoint - used to verify server is alive (useful for deployment/monitoring)
 app.get('/api/health', (req, res) => {

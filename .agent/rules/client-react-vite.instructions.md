@@ -30,6 +30,5 @@ applyTo: "client/**"
 - When status === null, distinguish date > today (future) vs date === today (not checked in yet).
 
 ## API usage
-- Base URL: http://localhost:3000/api (dev)
 - Authorization header: Bearer <token> on protected routes.
 - For export: open /reports/monthly/export in new tab to download xlsx.
