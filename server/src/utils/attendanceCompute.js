@@ -325,8 +325,6 @@ export function computeLateMinutes(dateKey, checkInAt, scheduleSnapshot = null) 
  * @param {string} dateKey
  * @param {Date} checkInAt
  * @param {Date} checkOutAt
- * @param {boolean} otApproved
- * @param {'CONTINUOUS'|'SEPARATED'} otMode
  * @param {Object|null} scheduleSnapshot
  * @param {{forceNoShiftCap?: boolean}} options
  * @returns {number}
