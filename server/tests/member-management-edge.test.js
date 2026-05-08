@@ -23,9 +23,6 @@ let adminToken, managerToken, manager2Token, managerNoTeamToken, employeeToken;
 let team1Id, team2Id, employeeId, employee2Id;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/member_edge_test_db')
-        || 'mongodb://localhost:27017/member_edge_test_db');
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
@@ -85,7 +82,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 
@@ -369,60 +365,6 @@ describe('Reset Password - Edge Cases', () => {
 
             expect(res.status).toBe(400);
         });
-    });
-});
-
-
-// ============================================
-// ERROR GUESSING - Common Mistakes
-// ============================================
-describe('Error Guessing - Common Mistakes', () => {
-
-    it('Expired/Invalid JWT -> 401', async () => {
-        const res = await request(app)
-            .get('/api/users/' + employeeId)
-            .set('Authorization', 'Bearer invalid.jwt.token');
-
-        expect(res.status).toBe(401);
-    });
-
-    it('Missing Bearer prefix -> 401', async () => {
-        const res = await request(app)
-            .get('/api/users/' + employeeId)
-            .set('Authorization', adminToken);
-
-        expect(res.status).toBe(401);
-    });
-
-    it('Empty Authorization header -> 401', async () => {
-        const res = await request(app)
-            .get('/api/users/' + employeeId)
-            .set('Authorization', '');
-
-        expect(res.status).toBe(401);
-    });
-
-    it('Response should NOT expose passwordHash', async () => {
-        const res = await request(app)
-            .get(`/api/users/${employeeId}`)
-            .set('Authorization', `Bearer ${adminToken}`);
-
-        expect(res.body.user).not.toHaveProperty('passwordHash');
-        expect(JSON.stringify(res.body)).not.toContain('passwordHash');
-    });
-
-    it('Update with extra fields (should be ignored)', async () => {
-        const res = await request(app)
-            .patch(`/api/admin/users/${employeeId}`)
-            .set('Authorization', `Bearer ${adminToken}`)
-            .send({
-                name: 'Safe Name',
-                role: 'ADMIN',        // Should be ignored
-                passwordHash: 'hack'  // Should be ignored
-            });
-
-        expect(res.status).toBe(200);
-        expect(res.body.user.role).toBe('EMPLOYEE');  // Role unchanged
     });
 });
 

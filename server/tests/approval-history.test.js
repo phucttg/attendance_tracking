@@ -20,11 +20,6 @@ let employeeBId;
 beforeAll(async () => {
     vi.setSystemTime(new Date('2026-03-04T03:00:00.000Z'));
 
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/approval_history_test_db')
-        || 'mongodb://localhost:27017/approval_history_test_db'
-    );
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Request.deleteMany({});
@@ -119,7 +114,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

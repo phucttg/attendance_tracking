@@ -64,16 +64,11 @@ function dateKeyNDaysAgo(n) {
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/auto_close_service_test_db')
-        ?? 'mongodb://localhost:27017/auto_close_service_test_db'
-    );
     await Attendance.deleteMany({});
 });
 
 afterAll(async () => {
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

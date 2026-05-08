@@ -33,10 +33,6 @@ const [overlapDate, raceDate, tzDate] = recentDistinctWeekdays(3, 2);
 const transitionDate = recentWeekday(1);
 
 beforeAll(async () => {
-    // Use separate database for deep dive tests
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/deep_dive_test_db')
-        || 'mongodb://localhost:27017/deep_dive_test_db');
-
     // Clean up
     await User.deleteMany({});
     await Team.deleteMany({});
@@ -104,7 +100,6 @@ afterAll(async () => {
     await Team.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 // ============================================

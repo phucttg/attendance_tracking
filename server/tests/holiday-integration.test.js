@@ -22,8 +22,6 @@ const WORKDAY_NORMAL = '2026-01-08';
 const WEEKEND_DAY = '2026-01-10';
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/holiday_integ_test')
-        || 'mongodb://localhost:27017/holiday_integ_test');
     await User.deleteMany({});
     await Holiday.deleteMany({});
     await Attendance.deleteMany({});
@@ -45,7 +43,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Holiday.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

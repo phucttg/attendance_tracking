@@ -11,10 +11,6 @@ describe('getTodayActivity weekend metrics', () => {
   let userWithoutAttendanceId;
 
   beforeAll(async () => {
-    await mongoose.connect(
-      process.env.MONGO_URI?.replace(/\/[^/]+$/, '/today_activity_weekend_ot_test_db')
-      || 'mongodb://localhost:27017/today_activity_weekend_ot_test_db'
-    );
   });
 
   afterAll(async () => {
@@ -24,7 +20,6 @@ describe('getTodayActivity weekend metrics', () => {
       $or: [{ employeeCode: /^TAWK/ }, { email: /^tawk\d+@example\.com$/ }]
     });
     await Team.deleteMany({ name: /^TAWK/ });
-    await mongoose.connection.close();
   });
 
   beforeEach(async () => {

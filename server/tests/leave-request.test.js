@@ -36,12 +36,6 @@ const FIXED_TIME = new Date('2026-02-10T03:00:00.000Z');
 beforeAll(async () => {
     vi.setSystemTime(FIXED_TIME);
 
-    // Use separate database for leave tests
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/leave_request_test_db')
-        || 'mongodb://localhost:27017/leave_request_test_db'
-    );
-
     // Clean up
     await User.deleteMany({});
     await Team.deleteMany({});
@@ -114,7 +108,6 @@ afterAll(async () => {
     await Request.deleteMany({});
     await Attendance.deleteMany({});
     await Holiday.deleteMany({});
-    await mongoose.connection.close();
 });
 
 // ============================================

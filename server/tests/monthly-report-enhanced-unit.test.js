@@ -32,11 +32,6 @@ import {
 let testTeam, testEmployee;
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/monthly_report_unit_test_db')
-        || 'mongodb://localhost:27017/monthly_report_unit_test_db'
-    );
-
     await clearTestData(User, Team, Attendance, Request);
 
     // Create test team and employee
@@ -52,7 +47,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
     await clearTestData(User, Team, Attendance, Request);
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

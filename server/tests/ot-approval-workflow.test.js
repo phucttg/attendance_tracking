@@ -40,10 +40,6 @@ describe('OT Approval Workflow Integration', () => {
   beforeAll(async () => {
     vi.setSystemTime(FIXED_TIME);
 
-    await mongoose.connect(
-      process.env.MONGO_URI?.replace(/\/[^/]+$/, '/ot_approval_workflow_test_db') ||
-      'mongodb://localhost:27017/ot_approval_workflow_test_db'
-    );
   });
 
   afterAll(async () => {
@@ -53,7 +49,6 @@ describe('OT Approval Workflow Integration', () => {
     await Attendance.deleteMany({});
     await WorkScheduleRegistration.deleteMany({});
     await Team.deleteMany({ name: /^WFLOW_OT/ });
-    await mongoose.connection.close();
   });
 
   beforeEach(async () => {

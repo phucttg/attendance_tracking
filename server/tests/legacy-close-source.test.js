@@ -23,11 +23,6 @@ let employeeToken;
 let employeeId;
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/legacy_close_source_test_db')
-        ?? 'mongodb://localhost:27017/legacy_close_source_test_db'
-    );
-
     await User.deleteMany({});
     await Attendance.deleteMany({});
 
@@ -54,7 +49,6 @@ beforeAll(async () => {
 afterAll(async () => {
     await User.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

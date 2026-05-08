@@ -150,8 +150,6 @@ describe('schedule policy + computeAttendance', () => {
         dateKey,
         createTimeInGMT7(dateKey, 9, 38),
         createTimeInGMT7('2026-04-11', 7, 40),
-        true,
-        'CONTINUOUS',
         shift2
       )
     ).toBe(472);
@@ -176,8 +174,6 @@ describe('schedule policy + computeAttendance', () => {
         dateKey,
         createTimeInGMT7(dateKey, 1, 34),
         createTimeInGMT7(dateKey, 7, 40),
-        false,
-        'CONTINUOUS',
         shift1
       )
     ).toBe(0);

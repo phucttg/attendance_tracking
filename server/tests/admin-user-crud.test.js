@@ -17,8 +17,6 @@ import bcrypt from 'bcrypt';
 let adminToken, managerToken, employeeToken, testTeamId;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/admin_crud_test')
-        || 'mongodb://localhost:27017/admin_crud_test');
     await User.deleteMany({});
     await Team.deleteMany({});
 
@@ -58,7 +56,6 @@ beforeAll(async () => {
 afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
-    await mongoose.connection.close();
 });
 
 // ============================================

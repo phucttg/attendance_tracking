@@ -1,5 +1,5 @@
 import * as attendanceService from '../services/attendanceService.js';
-import { getTodayDateKey, getDateKey } from '../utils/dateUtils.js';
+import { getTodayDateKey } from '../utils/dateUtils.js';
 import mongoose from 'mongoose';
 import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
 import { parsePaginationParams } from '../utils/pagination.js';

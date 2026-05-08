@@ -25,9 +25,6 @@ let attendanceId;
 let teamId, employeeId;
 
 beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/force_checkout_test_db')
-        || 'mongodb://localhost:27017/force_checkout_test_db');
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
@@ -91,7 +88,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 beforeEach(async () => {

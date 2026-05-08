@@ -41,10 +41,6 @@ function makeAdjustRequest(overrides = {}) {
 }
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/model_fields_v2_test_db')
-        ?? 'mongodb://localhost:27017/model_fields_v2_test_db'
-    );
     await Attendance.deleteMany({});
     await Request.deleteMany({});
 });
@@ -52,7 +48,6 @@ beforeAll(async () => {
 afterAll(async () => {
     await Attendance.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 // ============================================================================

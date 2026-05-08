@@ -31,9 +31,6 @@ const FIXED_TIME = new Date('2026-02-10T03:00:00.000Z');
 beforeAll(async () => {
     vi.setSystemTime(FIXED_TIME);
 
-    await mongoose.connect(process.env.MONGO_URI?.replace(/\/[^/]+$/, '/fullstack_test_db')
-        || 'mongodb://localhost:27017/fullstack_test_db');
-
     // Clean up
     await User.deleteMany({});
     await Team.deleteMany({});
@@ -121,7 +118,6 @@ afterAll(async () => {
     await Team.deleteMany({});
     await Attendance.deleteMany({});
     await Request.deleteMany({});
-    await mongoose.connection.close();
 });
 
 

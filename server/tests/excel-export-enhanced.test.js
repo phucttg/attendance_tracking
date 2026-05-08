@@ -32,11 +32,6 @@ async function loadWorkbookFromResponseBody(body) {
 }
 
 beforeAll(async () => {
-    await mongoose.connect(
-        process.env.MONGO_URI?.replace(/\/[^/]+$/, '/excel_export_enhanced_test_db')
-        || 'mongodb://localhost:27017/excel_export_enhanced_test_db'
-    );
-
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
@@ -108,7 +103,6 @@ afterAll(async () => {
     await User.deleteMany({});
     await Team.deleteMany({});
     await Attendance.deleteMany({});
-    await mongoose.connection.close();
 });
 
 describe('Excel Export Enhanced Format', () => {

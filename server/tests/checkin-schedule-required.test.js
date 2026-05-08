@@ -17,10 +17,6 @@ const todayIsWeekend = () => isWeekend(todayKey());
 const itWorkdayOnly = todayIsWeekend() ? it.skip : it;
 
 beforeAll(async () => {
-  await mongoose.connect(
-    process.env.MONGO_URI?.replace(/\/[^/]+$/, '/checkin_schedule_required_test_db')
-  );
-
   await User.deleteMany({});
   await Attendance.deleteMany({});
   await Holiday.deleteMany({});
@@ -50,7 +46,6 @@ afterAll(async () => {
   await Attendance.deleteMany({});
   await Holiday.deleteMany({});
   await WorkScheduleRegistration.deleteMany({});
-  await mongoose.connection.close();
 });
 
 beforeEach(async () => {

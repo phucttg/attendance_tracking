@@ -20,8 +20,8 @@ import {
   getTransactionOptions 
 } from '../config/database.js';
 import { createAdjustTimeRequest } from './adjustTimeService.js';
-import { createLeaveRequest, getApprovedLeaveDates } from './leaveService.js';
-import { createOtRequest, cancelOtRequest } from './otService.js';
+import { createLeaveRequest } from './leaveService.js';
+import { createOtRequest } from './otService.js';
 import {
   buildApprovedAttendanceOtSnapshot,
   buildClearedAttendanceOtSnapshot

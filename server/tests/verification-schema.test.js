@@ -8,11 +8,6 @@ describe('🧪 VERIFICATION: Request Schema Enum', () => {
 
   beforeAll(async () => {
     // Connect to test database
-    await mongoose.connect(
-      process.env.MONGO_URI?.replace(/\/[^/]+$/, '/verification_test') || 
-      'mongodb://localhost:27017/verification_test'
-    );
-
     // Create test user
     const timestamp = Date.now();
     testUser = await User.create({
@@ -31,7 +26,6 @@ describe('🧪 VERIFICATION: Request Schema Enum', () => {
       await Request.deleteMany({ userId: testUser._id });
       await User.deleteOne({ _id: testUser._id });
     }
-    await mongoose.connection.close();
   });
 
   it('CRITICAL: OT_REQUEST should be in schema enum', async () => {

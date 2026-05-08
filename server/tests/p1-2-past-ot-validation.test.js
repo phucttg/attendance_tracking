@@ -12,11 +12,6 @@ describe('P1-2: Past OT Time Validation (STRICT)', () => {
 
   beforeAll(async () => {
     // Connect to test database
-    await mongoose.connect(
-      process.env.MONGO_URI?.replace(/\/[^/]+$/, '/p1_2_test') || 
-      'mongodb://localhost:27017/p1_2_test'
-    );
-
     // Create test user with proper schema
     const timestamp = Date.now();
     testUser = await User.create({
@@ -43,7 +38,6 @@ describe('P1-2: Past OT Time Validation (STRICT)', () => {
     }
     
     // Disconnect from database
-    await mongoose.connection.close();
   });
 
   beforeEach(async () => {

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import Request from '../models/Request.js';
 import Attendance from '../models/Attendance.js';
 import Holiday from '../models/Holiday.js';
-import { getDateRange, countWorkdays, isWeekend } from '../utils/dateUtils.js';
+import { getDateRange, countWorkdays } from '../utils/dateUtils.js';
 
 /**
  * Create a LEAVE request.
