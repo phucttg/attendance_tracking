@@ -1,14 +1,12 @@
 services:
   server:
-    build: ./server
+    image: ghcr.io/phucfanmu20nams/attendance_tracking/server:latest
     restart: unless-stopped
     env_file:
       - ./server/.env
 
   nginx:
-    build:
-      context: .
-      dockerfile: nginx/Dockerfile
+    image: ghcr.io/phucfanmu20nams/attendance_tracking/nginx:latest
     ports:
       - '80:80'
     depends_on:
