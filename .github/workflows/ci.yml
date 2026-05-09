@@ -26,6 +26,8 @@ jobs:
         image: mongo:7
         ports:
           - 27017:27017
+    env:
+      JWT_SECRET: ci-test-secret-not-used-in-production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
