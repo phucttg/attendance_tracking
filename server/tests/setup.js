@@ -18,3 +18,7 @@ process.env.MONGO_URI = process.env.MONGO_URI?.replace(/\/[^/]+$/, '/attendance_
 if (mongoose.connection.readyState === 0) {
     await mongoose.connect(process.env.MONGO_URI);
 }
+
+afterAll(async () => {
+    await mongoose.disconnect();
+});
