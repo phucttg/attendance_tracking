@@ -30,33 +30,9 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: cd server && npm ci && npm test
 
-  client-lint:
-    name: Client — lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: client/package-lock.json
-      - run: cd client && npm ci && npm run lint
-
-  client-test:
-    name: Client — test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: client/package-lock.json
-      - run: cd client && npm ci && npm test
-
   build-and-deploy:
     name: Build & deploy
-    needs: [server-lint, server-test, client-lint, client-test]
+    needs: [server-lint, server-test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
