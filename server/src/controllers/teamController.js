@@ -17,12 +17,7 @@ export const getAllTeams = async (req, res) => {
 
         return res.status(200).json({ items: teams });
     } catch (error) {
-        // OWASP A05/A09: Verbose logging in dev, generic in prod
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('Error fetching teams:', error);
-        } else {
-            console.error('Error fetching teams');
-        }
+        req.log.error({ err: error }, 'Error fetching teams');
         return res.status(500).json({ message: 'Internal server error' });
     }
 };

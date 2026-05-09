@@ -11,6 +11,8 @@
  * - MONGODB_URI: Legacy fallback connection string
  */
 
+import logger from './logger.js';
+
 export const getMongoConnectionUri = () => {
   return process.env.MONGO_URI || process.env.MONGODB_URI || '';
 };
@@ -43,20 +45,19 @@ export const isReplicaSetAvailable = () => {
   
   // Atlas (mongodb+srv) almost always has replica set
   if (uri.startsWith('mongodb+srv://')) {
-    console.info('ℹ️  Detected MongoDB Atlas URI (mongodb+srv), enabling transactions');
+    logger.info('Detected MongoDB Atlas URI (mongodb+srv), enabling transactions');
     return true;
   }
-  
+
   // Explicit replicaSet parameter in connection string
   if (uri.includes('replicaSet=')) {
-    console.info('ℹ️  Detected replicaSet parameter in URI, enabling transactions');
+    logger.info('Detected replicaSet parameter in URI, enabling transactions');
     return true;
   }
 
   if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') {
-    console.warn(
-      '⚠️  HOLIDAY MUTATION WARNING: MONGODB_REPLICA_SET is not explicitly set.\n' +
-      '   Transaction detection is falling back to URI inspection only.'
+    logger.warn(
+      'MONGODB_REPLICA_SET is not explicitly set; transaction detection falling back to URI inspection only'
     );
   }
 

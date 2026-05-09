@@ -5,6 +5,7 @@ import {
   getConnectionOptions,
   getMongoConnectionUri
 } from './database.js';
+import logger from './logger.js';
 
 // Connect to MongoDB using connection string from environment variable
 // Throws error if connection fails - caller (server.js) handles the error
@@ -24,7 +25,7 @@ const connectDB = async () => {
   }
 
   assertHolidayMutationEnvironment();
-  console.log(`MongoDB Connected: ${conn.connection.host}`);
+  logger.info({ host: conn.connection.host }, 'MongoDB connected');
   return conn;
 };
 

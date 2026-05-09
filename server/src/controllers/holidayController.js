@@ -47,7 +47,7 @@ export async function createHoliday(req, res) {
                     : error.message
             });
         }
-        console.error('createHoliday error:', error);
+        req.log.error({ err: error }, 'createHoliday error');
         return res.status(500).json({ message: 'Internal server error' });
     }
 }
@@ -94,7 +94,7 @@ export async function getHolidays(req, res) {
             items: holidays.map((holiday) => serializeHolidayListItem(holiday, todayKey))
         });
     } catch (error) {
-        console.error('getHolidays error:', error);
+        req.log.error({ err: error }, 'getHolidays error');
         return res.status(500).json({ message: 'Internal server error' });
     }
 }
@@ -134,7 +134,7 @@ export async function createHolidayRange(req, res) {
                     : error.message
             });
         }
-        console.error('createHolidayRange error:', error);
+        req.log.error({ err: error }, 'createHolidayRange error');
         return res.status(500).json({ message: 'Internal server error' });
     }
 }
@@ -156,7 +156,7 @@ export async function deleteHoliday(req, res) {
             });
         }
 
-        console.error('deleteHoliday error:', error);
+        req.log.error({ err: error }, 'deleteHoliday error');
         return res.status(500).json({ message: 'Internal server error' });
     }
 }

@@ -1,4 +1,5 @@
 import { createClient } from 'redis';
+import logger from './logger.js';
 
 let rateLimitRedisClient = null;
 let connectPromise = null;
@@ -20,7 +21,7 @@ export function getRateLimitStoreMode(env = process.env) {
       !warnedMemoryInProduction
     ) {
       warnedMemoryInProduction = true;
-      console.warn('[rate-limit] RATE_LIMIT_STORE=memory in production; Redis is recommended.');
+      logger.warn('[rate-limit] RATE_LIMIT_STORE=memory in production; Redis is recommended.');
     }
     return configuredMode;
   }
@@ -38,7 +39,7 @@ export function getRateLimitRedisClient() {
   if (!redisUrl) {
     if (!warnedMissingRedisUrl) {
       warnedMissingRedisUrl = true;
-      console.warn('[rate-limit] RATE_LIMIT_STORE=redis but REDIS_URL is not configured; rate limits fail open.');
+      logger.warn('[rate-limit] RATE_LIMIT_STORE=redis but REDIS_URL is not configured; rate limits fail open.');
     }
     return null;
   }
@@ -46,7 +47,7 @@ export function getRateLimitRedisClient() {
   if (!rateLimitRedisClient) {
     rateLimitRedisClient = createClient({ url: redisUrl });
     rateLimitRedisClient.on('error', (err) => {
-      console.warn('[rate-limit] Redis client error; rate limits fail open:', err?.message || err);
+      logger.warn({ err }, '[rate-limit] Redis client error; rate limits fail open.');
     });
   }
 
@@ -66,11 +67,11 @@ export function initRateLimitRedis() {
   if (!connectPromise) {
     connectPromise = client.connect()
       .then(() => {
-        console.log('[rate-limit] Redis client connected.');
+        logger.info('[rate-limit] Redis client connected.');
         return client;
       })
       .catch((err) => {
-        console.warn('[rate-limit] Redis connection failed; rate limits fail open:', err?.message || err);
+        logger.warn({ err }, '[rate-limit] Redis connection failed; rate limits fail open.');
         connectPromise = null;
         return null;
       });

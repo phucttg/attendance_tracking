@@ -74,12 +74,7 @@ export const getUserById = async (req, res) => {
 
         return res.status(200).json({ user: targetUser });
     } catch (error) {
-        // OWASP A05/A09: Verbose logging in dev, generic in prod
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('Error fetching user by ID:', error);
-        } else {
-            console.error('Error fetching user by ID');
-        }
+        req.log.error({ err: error }, 'Error fetching user by ID');
 
         const statusCode = error.statusCode || 500;
 
@@ -124,12 +119,7 @@ export const updateUser = async (req, res) => {
             return res.status(409).json({ message: 'Email or username already exists' });
         }
 
-        // OWASP A05/A09: Verbose logging in dev, generic in prod
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('Error updating user:', error);
-        } else {
-            console.error('Error updating user');
-        }
+        req.log.error({ err: error }, 'Error updating user');
 
         const statusCode = error.statusCode || 500;
         const responseMessage = statusCode < 500
@@ -168,13 +158,7 @@ export const resetPassword = async (req, res) => {
         const result = await userService.resetPassword(id, newPassword);
         return res.status(200).json(result);
     } catch (error) {
-        // OWASP A05/A09: Verbose logging in dev, generic in prod
-        // SECURITY: Never log password-related data
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('Error resetting password:', error.message);
-        } else {
-            console.error('Error resetting password');
-        }
+        req.log.error('Error resetting password: %s', error.message);
 
         const statusCode = error.statusCode || 500;
         const responseMessage = statusCode < 500
@@ -212,12 +196,7 @@ export const createUser = async (req, res) => {
             });
         }
 
-        // OWASP A05/A09: Verbose logging in dev, generic in prod
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('createUser error:', error);
-        } else {
-            console.error('createUser error');
-        }
+        req.log.error({ err: error }, 'createUser error');
 
         const statusCode = error.statusCode || 500;
         const responseMessage = statusCode < 500
@@ -298,12 +277,7 @@ export const getAllUsers = async (req, res) => {
             }
         });
     } catch (error) {
-        // OWASP A05/A09: Verbose logging in dev, generic in prod
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('getAllUsers error:', error);
-        } else {
-            console.error('getAllUsers error');
-        }
+        req.log.error({ err: error }, 'getAllUsers error');
         return res.status(500).json({ message: 'Internal server error' });
     }
 };
@@ -337,11 +311,7 @@ export const softDeleteUser = async (req, res) => {
         const result = await userService.softDeleteUser(id, req.user._id);
         return res.status(200).json(result);
     } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('softDeleteUser error:', error);
-        } else {
-            console.error('softDeleteUser error');
-        }
+        req.log.error({ err: error }, 'softDeleteUser error');
         const statusCode = error.statusCode || 500;
         const responseMessage = statusCode < 500
             ? (error.message || 'Request failed')
@@ -378,11 +348,7 @@ export const restoreUser = async (req, res) => {
         const result = await userService.restoreUser(id);
         return res.status(200).json(result);
     } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('restoreUser error:', error);
-        } else {
-            console.error('restoreUser error');
-        }
+        req.log.error({ err: error }, 'restoreUser error');
         const statusCode = error.statusCode || 500;
         const responseMessage = statusCode < 500
             ? (error.message || 'Request failed')
@@ -412,11 +378,7 @@ export const purgeDeletedUsers = async (req, res) => {
         const result = await userService.purgeDeletedUsers();
         return res.status(200).json(result);
     } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-            console.error('purgeDeletedUsers error:', error);
-        } else {
-            console.error('purgeDeletedUsers error');
-        }
+        req.log.error({ err: error }, 'purgeDeletedUsers error');
         return res.status(500).json({ message: 'Internal server error' });
     }
 };

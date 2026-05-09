@@ -4,11 +4,12 @@ import app from './app.js';
 import connectDB from './config/db.js';
 import { initRateLimitRedis } from './config/redis.js';
 import { runAutoCloseCatchupOnStartup, startAutoCloseScheduler } from './services/autoCloseService.js';
+import logger from './config/logger.js';
 
 const PORT = process.env.PORT;
 
 if (!PORT) {
-  console.error('PORT is not defined in .env');
+  logger.error('PORT is not defined in .env');
   process.exit(1);
 }
 
@@ -19,10 +20,10 @@ connectDB()
     initRateLimitRedis();
     await runAutoCloseCatchupOnStartup();
     startAutoCloseScheduler();
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
   })
   .catch((err) => {
     // If DB fails, exit immediately - server can't work without database
-    console.error('Failed to connect DB:', err.message);
+    logger.error({ err }, 'Failed to connect DB');
     process.exit(1);
   });

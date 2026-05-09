@@ -6,6 +6,7 @@ import {
   getRateLimitStoreMode,
   initRateLimitRedis
 } from '../config/redis.js';
+import logger from '../config/logger.js';
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -95,7 +96,7 @@ function createRedisStore(prefix) {
   if (!client) {
     if (!warnedRedisStoreUnavailable) {
       warnedRedisStoreUnavailable = true;
-      console.warn('[rate-limit] Redis store unavailable; limiters fail open.');
+      logger.warn('[rate-limit] Redis store unavailable; limiters fail open.');
     }
     return null;
   }

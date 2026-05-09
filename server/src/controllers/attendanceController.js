@@ -197,12 +197,7 @@ export const getMyAttendance = async (req, res) => {
 
     return res.status(200).json(result);
   } catch (error) {
-    // OWASP A05/A09: Verbose logging in dev, generic in prod
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('Error fetching today activity:', error);
-    } else {
-      console.error('Error fetching today activity');
-    }
+    req.log.error({ err: error }, 'Error fetching today activity');
 
     const statusCode = error.statusCode || 500;
 
@@ -246,12 +241,7 @@ export const getAttendanceByUser = async (req, res) => {
 
     return res.status(200).json({ items });
   } catch (error) {
-    // OWASP A05/A09: Verbose logging in dev, generic in prod
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('Error fetching user attendance history:', error);
-    } else {
-      console.error('Error fetching user attendance history');
-    }
+    req.log.error({ err: error }, 'Error fetching user attendance history');
 
     const statusCode = error.statusCode || 500;
     const responseMessage = statusCode < 500
@@ -312,12 +302,7 @@ export const forceCheckout = async (req, res) => {
       attendance
     });
   } catch (error) {
-    // OWASP A05/A09: Verbose logging in dev, generic in prod
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('Error forcing checkout:', error);
-    } else {
-      console.error('Error forcing checkout');
-    }
+    req.log.error({ err: error }, 'Error forcing checkout');
 
     const statusCode = error.statusCode || 500;
     const responseMessage = statusCode < 500

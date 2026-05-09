@@ -108,7 +108,7 @@ export const getMonthlyReport = async (req, res) => {
         const statusCode = error.statusCode || 500;
         // LOG: Internal debugging (not exposed to client)
         if (statusCode >= 500) {
-            console.error('getMonthlyReport error:', error);
+            req.log.error({ err: error }, 'getMonthlyReport error');
         }
         // SECURITY: Don't expose internal error details for 500 errors (OWASP A09)
         const message = statusCode >= 500
@@ -216,7 +216,7 @@ export const exportMonthlyReport = async (req, res) => {
         const statusCode = error.statusCode || 500;
         // LOG: Internal debugging (not exposed to client)
         if (statusCode >= 500) {
-            console.error('exportMonthlyReport error:', error);
+            req.log.error({ err: error }, 'exportMonthlyReport error');
         }
         // SECURITY: Don't expose internal error details for 500 errors (OWASP A09)
         const message = statusCode >= 500
