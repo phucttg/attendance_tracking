@@ -1,5 +1,6 @@
 import Attendance from '../models/Attendance.js';
 import { createTimeInGMT7, getDateKey } from '../utils/dateUtils.js';
+import logger from '../config/logger.js';
 
 const ONE_MINUTE_MS = 60 * 1000;
 
@@ -83,10 +84,10 @@ const scheduleNextRun = () => {
     try {
       const result = await autoCloseOpenSessionsBeforeToday({ reason: 'scheduled' });
       if (result.closed > 0) {
-        console.log(`[auto-close] Closed ${result.closed}/${result.processed} overdue sessions`);
+        logger.info({ closed: result.closed, processed: result.processed }, '[auto-close] Closed overdue sessions');
       }
     } catch (error) {
-      console.error('[auto-close] Scheduled run failed:', error.message);
+      logger.error({ err: error }, '[auto-close] Scheduled run failed');
     } finally {
       scheduleNextRun();
     }
@@ -109,11 +110,11 @@ export const runAutoCloseCatchupOnStartup = async () => {
   try {
     const result = await autoCloseOpenSessionsBeforeToday({ reason: 'startup-catchup' });
     if (result.closed > 0) {
-      console.log(`[auto-close] Startup catch-up closed ${result.closed}/${result.processed} overdue sessions`);
+      logger.info({ closed: result.closed, processed: result.processed }, '[auto-close] Startup catch-up closed overdue sessions');
     }
     return result;
   } catch (error) {
-    console.error('[auto-close] Startup catch-up failed:', error.message);
+    logger.error({ err: error }, '[auto-close] Startup catch-up failed');
     return { processed: 0, closed: 0, reason: 'startup-catchup' };
   }
 };
