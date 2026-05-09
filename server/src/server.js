@@ -1,8 +1,8 @@
 // Load environment variables from .env file FIRST (before any other imports use them)
 import 'dotenv/config';
 import app from './app.js';
-import connectDB from './config/db.js';
-import { initRateLimitRedis } from './config/redis.js';
+import connectDB, { disconnectDB } from './config/db.js';
+import { initRateLimitRedis, disconnectRedis } from './config/redis.js';
 import { runAutoCloseCatchupOnStartup, startAutoCloseScheduler } from './services/autoCloseService.js';
 import logger from './config/logger.js';
 
@@ -13,17 +13,45 @@ if (!PORT) {
   process.exit(1);
 }
 
-// Connect to MongoDB first, then start server
-// Pattern: DB must be ready before accepting HTTP requests
+let server;
+let isShuttingDown = false;
+
+const shutdown = (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info({ signal }, 'Shutdown signal received, closing gracefully');
+
+  server.close(async () => {
+    try {
+      await disconnectDB();
+      await disconnectRedis();
+      logger.info('Graceful shutdown complete');
+      process.exit(0);
+    } catch (err) {
+      logger.error({ err }, 'Error during shutdown');
+      process.exit(1);
+    }
+  });
+
+  setTimeout(() => {
+    logger.error('Shutdown timed out after 15 s, forcing exit');
+    process.exit(1);
+  }, 15_000).unref();
+};
+
 connectDB()
   .then(async () => {
     initRateLimitRedis();
     await runAutoCloseCatchupOnStartup();
     startAutoCloseScheduler();
-    app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
+
+    server = app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT',  () => shutdown('SIGINT'));
   })
   .catch((err) => {
-    // If DB fails, exit immediately - server can't work without database
     logger.error({ err }, 'Failed to connect DB');
     process.exit(1);
   });

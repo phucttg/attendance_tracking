@@ -80,3 +80,10 @@ export function initRateLimitRedis() {
   return connectPromise;
 }
 
+export async function disconnectRedis() {
+  if (rateLimitRedisClient && rateLimitRedisClient.isOpen) {
+    await rateLimitRedisClient.quit();
+    logger.info('[rate-limit] Redis client disconnected.');
+  }
+}
+
