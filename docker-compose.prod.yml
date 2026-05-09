@@ -1,0 +1,16 @@
+services:
+  server:
+    build: ./server
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - '80:80'
+    depends_on:
+      - server
+    restart: unless-stopped
