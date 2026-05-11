@@ -70,15 +70,6 @@ export default function ApprovalModal({
         return `${hours}h ${mins}m`;
     };
 
-    const getLeaveTypeLabel = (type) => {
-        const labels = {
-            ANNUAL: 'Phép năm',
-            SICK: 'Ốm đau',
-            UNPAID: 'Không lương',
-        };
-        return labels[type] || 'Nghỉ phép';
-    };
-
     const isApprove = action === 'approve';
     const actionLabel = isApprove ? 'duyệt' : 'từ chối';
     const requestDate = request?.date || request?.checkInDate;
@@ -165,10 +156,6 @@ export default function ApprovalModal({
                                 <p>
                                     <span className="text-gray-500">Khoảng nghỉ:</span>{' '}
                                     {formatDate(request?.leaveStartDate)} → {formatDate(request?.leaveEndDate)}
-                                </p>
-                                <p>
-                                    <span className="text-gray-500">Loại nghỉ:</span>{' '}
-                                    {getLeaveTypeLabel(request?.leaveType)}
                                 </p>
                                 {typeof request?.leaveDaysCount === 'number' && (
                                     <p>

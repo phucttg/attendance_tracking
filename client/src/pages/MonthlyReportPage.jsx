@@ -117,9 +117,6 @@ export default function MonthlyReportPage() {
         acc.unregisteredDays += row?.unregisteredDays ?? 0;
         acc.absentDays += row?.absentDays ?? 0;
         acc.leaveDays += row?.leaveDays ?? 0;
-        acc.annualLeave += row?.leaveByType?.ANNUAL ?? 0;
-        acc.sickLeave += row?.leaveByType?.SICK ?? 0;
-        acc.unpaidLeave += row?.leaveByType?.UNPAID ?? 0;
         acc.totalWorkMinutes += row?.totalWorkMinutes ?? 0;
         acc.totalLateCount += row?.totalLateCount ?? 0;
         acc.totalLateMinutes += row?.totalLateMinutes ?? 0;
@@ -133,9 +130,6 @@ export default function MonthlyReportPage() {
         unregisteredDays: 0,
         absentDays: 0,
         leaveDays: 0,
-        annualLeave: 0,
-        sickLeave: 0,
-        unpaidLeave: 0,
         totalWorkMinutes: 0,
         totalLateCount: 0,
         totalLateMinutes: 0,
@@ -393,9 +387,6 @@ export default function MonthlyReportPage() {
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Chưa đăng ký ca</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Vắng mặt</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Nghỉ phép</Table.HeadCell>
-                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Phép năm</Table.HeadCell>
-                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Nghỉ ốm</Table.HeadCell>
-                                <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Không lương</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Giờ làm (h)</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Đi muộn (lần)</Table.HeadCell>
                                 <Table.HeadCell className="sticky top-0 z-30 bg-gray-50 text-right">Đi muộn (phút)</Table.HeadCell>
@@ -431,15 +422,6 @@ export default function MonthlyReportPage() {
                                             {row.leaveDays || 0}
                                         </Table.Cell>
                                         <Table.Cell className="text-right">
-                                            {row.leaveByType?.ANNUAL || 0}
-                                        </Table.Cell>
-                                        <Table.Cell className="text-right">
-                                            {row.leaveByType?.SICK || 0}
-                                        </Table.Cell>
-                                        <Table.Cell className="text-right">
-                                            {row.leaveByType?.UNPAID || 0}
-                                        </Table.Cell>
-                                        <Table.Cell className="text-right">
                                             {formatHours(row.totalWorkMinutes)}
                                         </Table.Cell>
                                         <Table.Cell className="text-right">
@@ -472,9 +454,6 @@ export default function MonthlyReportPage() {
                                     <Table.Cell className="text-right">{totals.unregisteredDays}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.absentDays}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.leaveDays}</Table.Cell>
-                                    <Table.Cell className="text-right">{totals.annualLeave}</Table.Cell>
-                                    <Table.Cell className="text-right">{totals.sickLeave}</Table.Cell>
-                                    <Table.Cell className="text-right">{totals.unpaidLeave}</Table.Cell>
                                     <Table.Cell className="text-right">{formatHours(totals.totalWorkMinutes)}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.totalLateCount}</Table.Cell>
                                     <Table.Cell className="text-right">{totals.totalLateMinutes}</Table.Cell>

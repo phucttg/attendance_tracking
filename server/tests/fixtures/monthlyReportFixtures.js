@@ -55,13 +55,12 @@ export function createAttendanceRecord(userId, date, checkInAt, checkOutAt = nul
 /**
  * Create leave request
  */
-export function createLeaveRequest(userId, startDate, endDate, leaveType, status = 'APPROVED') {
+export function createLeaveRequest(userId, startDate, endDate, status = 'APPROVED') {
     return {
         userId,
         type: 'LEAVE',
         leaveStartDate: startDate,
         leaveEndDate: endDate,
-        leaveType,
         status
     };
 }
@@ -91,7 +90,7 @@ export function getScenario1Data(employeeId) {
     ];
     
     const leaves = [
-        createLeaveRequest(employeeId, '2026-02-06', '2026-02-07', 'SICK'), // Thu-Fri
+        createLeaveRequest(employeeId, '2026-02-06', '2026-02-07'), // Thu-Fri
     ];
     
     const holidays = createHolidaySet(['2026-02-12']); // Wed holiday
@@ -101,7 +100,7 @@ export function getScenario1Data(employeeId) {
 
 /**
  * Scenario Dataset 2: Leave Edge Cases
- * Purpose: Validate GAP-1 (leave workday filtering), C4 (leaveType enum), N2 (overlap clipping)
+ * Purpose: Validate GAP-1 (leave workday filtering), N2 (overlap clipping)
  * 
  * Cross-month leave with weekends and holidays
  */
@@ -115,16 +114,15 @@ export function getScenario2Data(employeeId) {
     const leaves = [
         // Leave spanning Jan 28 (Wed) -> Feb 3 (Tue)
         // Jan 31-Feb 1 are weekend, Feb 2 (Mon) is in month
-        createLeaveRequest(employeeId, '2026-01-28', '2026-02-03', 'ANNUAL'),
+        createLeaveRequest(employeeId, '2026-01-28', '2026-02-03'),
         
         // Weekend-only leave (should count as 0 workdays)
-        createLeaveRequest(employeeId, '2026-02-07', '2026-02-08', 'SICK'), // Sat-Sun
+        createLeaveRequest(employeeId, '2026-02-07', '2026-02-08'), // Sat-Sun
         
         // Leave including holiday
-        createLeaveRequest(employeeId, '2026-02-12', '2026-02-13', 'UNPAID'), // Wed (holiday) + Thu
+        createLeaveRequest(employeeId, '2026-02-12', '2026-02-13'), // Wed (holiday) + Thu
         
-        // Leave with null type
-        createLeaveRequest(employeeId, '2026-02-20', '2026-02-20', null), // Thu
+        createLeaveRequest(employeeId, '2026-02-20', '2026-02-20'), // Thu
     ];
     
     const holidays = createHolidaySet(['2026-02-12']); // Wed
@@ -223,7 +221,7 @@ export function getScenario5Data(employeeId, todayDate = '2026-03-15') {
     ];
     
     const leaves = [
-        createLeaveRequest(employeeId, '2026-03-05', '2026-03-06', 'ANNUAL'), // Wed-Thu before today
+        createLeaveRequest(employeeId, '2026-03-05', '2026-03-06'), // Wed-Thu before today
     ];
     
     const holidays = createHolidaySet(['2026-03-08']); // Sun (weekend holiday, shouldn't affect)

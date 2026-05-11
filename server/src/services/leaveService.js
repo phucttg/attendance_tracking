@@ -19,7 +19,7 @@ import { getDateRange, countWorkdays } from '../utils/dateUtils.js';
  * @param {string} userId - User's ObjectId
  * @param {string} leaveStartDate - "YYYY-MM-DD"
  * @param {string} leaveEndDate - "YYYY-MM-DD"
- * @param {string|null} leaveType - "ANNUAL" | "SICK" | "UNPAID" | null
+ * @param {string|null} leaveType - Legacy optional value from old clients; new UI sends null.
  * @param {string} reason - Reason for leave
  * @returns {Promise<Object>} Created request with leaveDaysCount
  */
@@ -76,7 +76,7 @@ export const createLeaveRequest = async (userId, leaveStartDate, leaveEndDate, l
     throw error;
   }
 
-  // Validation 5: leaveType must be valid enum or null
+  // Validation 5: legacy leaveType must be valid enum or null
   if (leaveType && !['ANNUAL', 'SICK', 'UNPAID'].includes(leaveType)) {
     const error = new Error('leaveType must be ANNUAL, SICK, or UNPAID');
     error.statusCode = 400;

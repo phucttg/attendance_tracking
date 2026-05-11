@@ -5,7 +5,6 @@ import {
     Textarea,
     Button,
     Spinner,
-    Select,
 } from 'flowbite-react';
 import { HiPlus } from 'react-icons/hi';
 import { createRequest } from '../../api/requestApi';
@@ -83,7 +82,6 @@ export default function LeaveRequestForm({
                 reason: formData.reason.trim(),
                 leaveStartDate: formData.leaveStartDate,
                 leaveEndDate: formData.leaveEndDate,
-                leaveType: formData.leaveType,
             };
 
             await createRequest(payload);
@@ -108,7 +106,7 @@ export default function LeaveRequestForm({
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Leave Start Date */}
                 <div>
                     <Label htmlFor="leaveStartDate" value="Từ ngày *" />
@@ -133,21 +131,6 @@ export default function LeaveRequestForm({
                         onChange={handleInputChange}
                         required
                     />
-                </div>
-
-                {/* Leave Type */}
-                <div>
-                    <Label htmlFor="leaveType" value="Loại nghỉ" />
-                    <Select
-                        id="leaveType"
-                        name="leaveType"
-                        value={formData.leaveType}
-                        onChange={handleInputChange}
-                    >
-                        <option value="ANNUAL">Phép năm</option>
-                        <option value="SICK">Ốm đau</option>
-                        <option value="UNPAID">Không lương</option>
-                    </Select>
                 </div>
             </div>
 

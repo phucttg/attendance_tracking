@@ -45,7 +45,6 @@ export const getMyRequests = (params = {}, config = {}) =>
  * // LEAVE fields:
  * @param {string} [payload.leaveStartDate] - Start date YYYY-MM-DD (required if type=LEAVE)
  * @param {string} [payload.leaveEndDate] - End date YYYY-MM-DD (required if type=LEAVE)
- * @param {string} [payload.leaveType] - Leave type (ANNUAL | SICK | UNPAID, optional)
  * 
  * // Common:
  * @param {string} payload.reason - Reason for request (required, max 1000 chars)

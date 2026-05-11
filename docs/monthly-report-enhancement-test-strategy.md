@@ -69,7 +69,7 @@ This test strategy covers the enhancement of the monthly report functionality to
 | **Month Selection** | Past months, Current month, Future months | Invalid date formats | C2 elapsed logic |
 | **User Scope** | Company (Admin), Team (Admin with teamId), Own team (Manager) | Missing teamId for Admin team scope | C1 validation |
 | **Attendance Status** | Present statuses: `{ON_TIME, LATE, EARLY_LEAVE, LATE_AND_EARLY, WORKING, MISSING_CHECKOUT}` | Invalid statuses | C3 set logic |
-| **Leave Types** | `ANNUAL`, `SICK`, `UNPAID`, `null` | Invalid enum values | C4 breakdown |
+| **Leave Ranges** | Single-day, multi-day, cross-month, weekend-only | Invalid date ranges | Leave-day counting |
 | **Day Types** | Workday, Weekend, Holiday | Edge cases (public holiday on weekend) | GAP-1 filtering |
 
 #### 2. **Boundary Value Analysis**
@@ -165,8 +165,8 @@ This test strategy covers the enhancement of the monthly report functionality to
 ### Functional Suitability - Deep Dive (Critical)
 
 **Completeness Assessment:**
-- ✅ All 16 report columns specified and implemented
-- ✅ Leave breakdown by type (`ANNUAL`, `SICK`, `UNPAID`, `UNSPECIFIED`)
+- ✅ Report summary columns specified and implemented
+- ✅ Leave total counts approved leave workdays without type breakdown
 - ✅ Late details with deterministic sorting
 - ✅ Team name populated for each user
 - ✅ Separate sheet for late details in Excel export
@@ -178,7 +178,7 @@ This test strategy covers the enhancement of the monthly report functionality to
 | `elapsedWorkdays` | Based on month status (past/current/future) | Past=full, current=up to today, future=0 |
 | `absentDays` | `size(elapsedWorkdaySet - presentDateSet - leaveDateSetElapsedWorkday)` | C2, C3 edge cases |
 | `leaveDays` (display) | Leave workdays for full month (not just elapsed) | N2 cross-month overlap |
-| `leaveByType` | Group by `leaveType` enum | C4 uppercase + null handling |
+| `leaveDays` | Count approved leave workdays without type breakdown | No leave type dependency |
 
 **Appropriateness:**
 - Elapsed-based absent days appropriate for current month (C2 rationale)
@@ -210,9 +210,9 @@ This test strategy covers the enhancement of the monthly report functionality to
 
 **Dataset 2: Leave Edge Cases**
 - 2 users with cross-month leave requests
-- Leave types: ANNUAL, SICK, UNPAID, null
+- Single-day, multi-day, weekend-only, and holiday-overlapping leave ranges
 - Overlapping weekends and holidays within leave period
-- Purpose: Validate GAP-1 (leave workday filtering), C4 (leaveType enum), N2 (overlap clipping)
+- Purpose: Validate GAP-1 (leave workday filtering), N2 (overlap clipping)
 
 **Dataset 3: Late Details Sorting**
 - 1 user with multiple late check-ins in same month

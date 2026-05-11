@@ -16,7 +16,6 @@ import { parsePaginationParams, clampPage, buildPaginatedResponse } from '../uti
  * - type: "LEAVE"
  * - leaveStartDate: "YYYY-MM-DD" (required)
  * - leaveEndDate: "YYYY-MM-DD" (required)
- * - leaveType: "ANNUAL" | "SICK" | "UNPAID" (optional)
  * - reason: string (required)
  */
 export const createRequest = async (req, res) => {

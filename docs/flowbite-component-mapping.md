@@ -112,7 +112,7 @@ import { Table, Badge, Button, Modal, Spinner, Alert } from "flowbite-react";
 - `Modal` - confirm action (NEW v2.7: displays contextual details)
   - OT requests: shows actual check-in/check-out times alongside requested times
   - ADJUST_TIME requests: shows requested times
-  - LEAVE requests: shows date range, leave type, working days count
+  - LEAVE requests: shows date range and working days count
   - All times formatted in Vietnamese locale with GMT+7 timezone
 
 ### 7. TimesheetMatrixPage (Manager/Admin)

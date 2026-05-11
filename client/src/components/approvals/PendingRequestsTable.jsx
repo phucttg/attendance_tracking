@@ -103,15 +103,6 @@ export default function PendingRequestsTable({
         return `${hours}h ${mins}m`;
     };
 
-    const getLeaveTypeLabel = (type) => {
-        const labels = {
-            ANNUAL: 'Phép năm',
-            SICK: 'Ốm đau',
-            UNPAID: 'Không lương',
-        };
-        return labels[type] || 'Nghỉ phép';
-    };
-
     const getTypeBadge = (type) => {
         if (type === 'LEAVE') {
             return <Badge color="cyan">Nghỉ phép</Badge>;
@@ -196,9 +187,6 @@ export default function PendingRequestsTable({
                                     <Table.Cell className="whitespace-nowrap">
                                         {req.type === 'LEAVE' ? (
                                             <div className="flex flex-col gap-1">
-                                                <Badge color="blue" size="sm">
-                                                    {getLeaveTypeLabel(req.leaveType)}
-                                                </Badge>
                                                 <span className="text-xs text-gray-600">
                                                     {req.leaveDaysCount ?? 0} ngày làm việc
                                                 </span>

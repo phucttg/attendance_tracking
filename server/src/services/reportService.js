@@ -22,7 +22,6 @@ const PRESENT_STATUSES = new Set([
 ]);
 
 const EARLY_LEAVE_STATUSES = new Set(['EARLY_LEAVE', 'LATE_AND_EARLY']);
-const DEFAULT_LEAVE_TYPE = 'UNSPECIFIED';
 
 function getMonthBoundaries(month) {
     const [year, monthNum] = month.split('-').map(Number);
@@ -64,34 +63,11 @@ function buildWorkdaySet(startDate, endDate, holidayDates) {
     return set;
 }
 
-function normalizeLeaveType(rawType) {
-    if (rawType === 'ANNUAL' || rawType === 'SICK' || rawType === 'UNPAID') {
-        return rawType;
-    }
-    return DEFAULT_LEAVE_TYPE;
-}
-
 function createEmptyLeaveAggregate() {
     return {
         leaveDateSetFull: new Set(),
-        leaveDateSetElapsedWorkday: new Set(),
-        leaveTypeByDate: new Map()
+        leaveDateSetElapsedWorkday: new Set()
     };
-}
-
-function getLeaveByTypeCounts(leaveTypeByDate) {
-    const leaveByType = {
-        ANNUAL: 0,
-        SICK: 0,
-        UNPAID: 0,
-        UNSPECIFIED: 0
-    };
-
-    for (const leaveType of leaveTypeByDate.values()) {
-        leaveByType[leaveType] += 1;
-    }
-
-    return leaveByType;
 }
 
 function computeMissingDays(
@@ -123,7 +99,7 @@ function computeMissingDays(
     return { absentDays, unregisteredDays };
 }
 
-function addLeaveDatesToAggregate(targetSet, leaveStart, leaveEnd, leaveType, holidayDates, leaveTypeByDate = null) {
+function addLeaveDatesToAggregate(targetSet, leaveStart, leaveEnd, holidayDates) {
     if (!leaveStart || !leaveEnd || leaveStart > leaveEnd) {
         return;
     }
@@ -134,9 +110,6 @@ function addLeaveDatesToAggregate(targetSet, leaveStart, leaveEnd, leaveType, ho
         }
 
         targetSet.add(dateKey);
-        if (leaveTypeByDate && !leaveTypeByDate.has(dateKey)) {
-            leaveTypeByDate.set(dateKey, leaveType);
-        }
     }
 }
 
@@ -236,7 +209,7 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         leaveStartDate: { $lte: monthEnd },
         leaveEndDate: { $gte: monthStart }
     })
-        .select('userId leaveType leaveStartDate leaveEndDate')
+        .select('userId leaveStartDate leaveEndDate')
         .sort({ leaveStartDate: 1, leaveEndDate: 1, _id: 1 })
         .lean();
 
@@ -258,7 +231,6 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         }
 
         const leaveAggregate = leaveByUser.get(key);
-        const leaveType = normalizeLeaveType(leaveRecord.leaveType);
         const fullMonthRange = intersectRange(
             leaveRecord.leaveStartDate,
             leaveRecord.leaveEndDate,
@@ -271,9 +243,7 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
                 leaveAggregate.leaveDateSetFull,
                 fullMonthRange.start,
                 fullMonthRange.end,
-                leaveType,
-                holidayDates,
-                leaveAggregate.leaveTypeByDate
+                holidayDates
             );
         }
 
@@ -290,9 +260,7 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
                     leaveAggregate.leaveDateSetElapsedWorkday,
                     elapsedRange.start,
                     elapsedRange.end,
-                    leaveType,
-                    holidayDates,
-                    null
+                    holidayDates
                 );
             }
         }
@@ -316,7 +284,6 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
         const userRecords = attendanceByUser.get(userKey) || [];
         const computed = computeUserMonthlySummary(userRecords, holidayDates);
         const leaveAggregate = leaveByUser.get(userKey) || createEmptyLeaveAggregate();
-        const leaveByType = getLeaveByTypeCounts(leaveAggregate.leaveTypeByDate);
         const leaveDays = leaveAggregate.leaveDateSetFull.size;
         const registrationDateSet = registrationByUser.get(userKey) || new Set();
         const { absentDays, unregisteredDays } = computeMissingDays(
@@ -341,7 +308,6 @@ export const getMonthlyReport = async (scope, month, teamId, holidayDates = new 
             unregisteredDays,
             absentDays,
             leaveDays,
-            leaveByType,
             totalWorkMinutes: computed.totalWorkMinutes,
             totalLateCount: computed.totalLateCount,
             totalLateMinutes: computed.totalLateMinutes,

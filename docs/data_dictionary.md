@@ -152,7 +152,7 @@ Fields:
 - actualOtMinutes: Number | null [for OT_REQUEST only] (NEW v2.6 - filled after checkout for tracking)
 - leaveStartDate: string "YYYY-MM-DD" | null [for LEAVE only] (NEW v2.3)
 - leaveEndDate: string "YYYY-MM-DD" | null [for LEAVE only] (NEW v2.3)
-- leaveType: enum ["ANNUAL", "SICK", "UNPAID"] | null [optional] (NEW v2.3)
+- leaveType: enum ["ANNUAL", "SICK", "UNPAID"] | null [legacy optional; retained only for old data/client compatibility]
 - leaveDaysCount: Number | null [for LEAVE only] (NEW v2.6 - pre-computed workday count)
 - reason: string [required for OT_REQUEST at model level; validated by controller for all types]
 - status: enum ["PENDING", "APPROVED", "REJECTED"] [default "PENDING"]
@@ -183,7 +183,7 @@ Notes:
   - E2: Auto-extend feature prevents duplicate OT_REQUEST for same date
   - I1: Cross-midnight OT uses 1 request anchored by the check-in date
   - A1: STRICT mode - no grace period after the schedule-derived shift end
-- Leave requests use leaveStartDate/EndDate, ignore date field.
+- Leave requests use leaveStartDate/EndDate, ignore date field, and no longer collect leave type in the current UI/API contract.
 - OT_REQUEST uses date field (single day), ignore leave fields.
 - Overlap check: query by (userId, status: APPROVED, type: LEAVE) and compare date ranges.
   Consider compound index on (userId, type, status) for performance.

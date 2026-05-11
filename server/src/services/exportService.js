@@ -101,9 +101,6 @@ export const generateMonthlyExportExcel = async (scope, month, teamId, holidayDa
         { header: 'Chưa đăng ký ca', key: 'unregisteredDays', width: 14 },
         { header: 'Vắng mặt', key: 'absentDays', width: 11 },
         { header: 'Nghỉ phép (tổng)', key: 'leaveDays', width: 15 },
-        { header: 'Phép năm', key: 'annualLeave', width: 10 },
-        { header: 'Nghỉ ốm', key: 'sickLeave', width: 10 },
-        { header: 'Không lương', key: 'unpaidLeave', width: 12 },
         { header: 'Giờ làm (h)', key: 'totalWorkHours', width: 12 },
         { header: 'Đi muộn (lần)', key: 'totalLateCount', width: 13 },
         { header: 'Đi muộn (phút)', key: 'totalLateMinutes', width: 14 },
@@ -147,9 +144,6 @@ export const generateMonthlyExportExcel = async (scope, month, teamId, holidayDa
             unregisteredDays: item?.unregisteredDays ?? 0,
             absentDays: item?.absentDays ?? 0,
             leaveDays: item?.leaveDays ?? 0,
-            annualLeave: item?.leaveByType?.ANNUAL ?? 0,
-            sickLeave: item?.leaveByType?.SICK ?? 0,
-            unpaidLeave: item?.leaveByType?.UNPAID ?? 0,
             totalWorkHours: toHours(item?.totalWorkMinutes),
             totalLateCount: item?.totalLateCount ?? 0,
             totalLateMinutes: item?.totalLateMinutes ?? 0,
@@ -165,9 +159,6 @@ export const generateMonthlyExportExcel = async (scope, month, teamId, holidayDa
         acc.unregisteredDays += item?.unregisteredDays ?? 0;
         acc.absentDays += item?.absentDays ?? 0;
         acc.leaveDays += item?.leaveDays ?? 0;
-        acc.annualLeave += item?.leaveByType?.ANNUAL ?? 0;
-        acc.sickLeave += item?.leaveByType?.SICK ?? 0;
-        acc.unpaidLeave += item?.leaveByType?.UNPAID ?? 0;
         acc.totalWorkMinutes += item?.totalWorkMinutes ?? 0;
         acc.totalLateCount += item?.totalLateCount ?? 0;
         acc.totalLateMinutes += item?.totalLateMinutes ?? 0;
@@ -181,9 +172,6 @@ export const generateMonthlyExportExcel = async (scope, month, teamId, holidayDa
         unregisteredDays: 0,
         absentDays: 0,
         leaveDays: 0,
-        annualLeave: 0,
-        sickLeave: 0,
-        unpaidLeave: 0,
         totalWorkMinutes: 0,
         totalLateCount: 0,
         totalLateMinutes: 0,
@@ -199,9 +187,6 @@ export const generateMonthlyExportExcel = async (scope, month, teamId, holidayDa
         unregisteredDays: totals.unregisteredDays,
         absentDays: totals.absentDays,
         leaveDays: totals.leaveDays,
-        annualLeave: totals.annualLeave,
-        sickLeave: totals.sickLeave,
-        unpaidLeave: totals.unpaidLeave,
         totalWorkHours: toHours(totals.totalWorkMinutes),
         totalLateCount: totals.totalLateCount,
         totalLateMinutes: totals.totalLateMinutes,
@@ -287,9 +272,6 @@ export const generateMonthlyExportExcel = async (scope, month, teamId, holidayDa
         'unregisteredDays',
         'absentDays',
         'leaveDays',
-        'annualLeave',
-        'sickLeave',
-        'unpaidLeave',
         'totalWorkHours',
         'totalLateCount',
         'totalLateMinutes',

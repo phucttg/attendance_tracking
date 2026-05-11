@@ -206,7 +206,7 @@ On approve:
 - Request can be type `ADJUST_TIME` or `LEAVE`
 - LEAVE = full-day leave only (no attendance for that day)
 - LEAVE request requires: leaveStartDate, leaveEndDate (YYYY-MM-DD)
-- Optional: leaveType (ANNUAL | SICK | UNPAID)
+- LEAVE request no longer collects leave type; new requests only require a date range and reason.
 
 ### 8.2 Leave vs Attendance
 - LEAVE is for days with **no attendance**
