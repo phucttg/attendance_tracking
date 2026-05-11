@@ -50,21 +50,21 @@ export default function TodayActivityTable({
         <div className="overflow-x-auto">
             <Table striped>
                 <Table.Head>
-                    <Table.HeadCell>Code</Table.HeadCell>
-                    <Table.HeadCell>Name</Table.HeadCell>
+                    <Table.HeadCell>Mã NV</Table.HeadCell>
+                    <Table.HeadCell>Họ tên</Table.HeadCell>
                     <Table.HeadCell>Email</Table.HeadCell>
-                    <Table.HeadCell>Status</Table.HeadCell>
+                    <Table.HeadCell>Trạng thái</Table.HeadCell>
                     <Table.HeadCell>Ca</Table.HeadCell>
-                    <Table.HeadCell>Check In</Table.HeadCell>
-                    <Table.HeadCell>Check Out</Table.HeadCell>
-                    <Table.HeadCell>Actions</Table.HeadCell>
+                    <Table.HeadCell>Check-in</Table.HeadCell>
+                    <Table.HeadCell>Check-out</Table.HeadCell>
+                    <Table.HeadCell>Thao tác</Table.HeadCell>
                 </Table.Head>
                 <Table.Body className="divide-y">
                     {/* P2 FIX: Empty state */}
                     {isEmpty ? (
                             <Table.Row>
                                 <Table.Cell colSpan={8} className="text-center py-8 text-gray-500">
-                                    No activity found for today.
+                                    Không có hoạt động nào hôm nay.
                                 </Table.Cell>
                             </Table.Row>
                     ) : (
@@ -103,7 +103,7 @@ export default function TodayActivityTable({
                                                 size="xs"
                                                 color="light"
                                                 onClick={() => onViewDetail?.(user._id)}
-                                                title="View Detail"
+                                                title="Xem chi tiết"
                                                 aria-label="View member detail"
                                             >
                                                 <HiEye className="h-4 w-4" />
@@ -112,7 +112,7 @@ export default function TodayActivityTable({
                                                 size="xs"
                                                 color="light"
                                                 onClick={() => onEdit?.(user)}
-                                                title="Edit Member"
+                                                title="Chỉnh sửa"
                                                 aria-label="Edit member"
                                             >
                                                 <HiPencil className="h-4 w-4" />
@@ -121,7 +121,7 @@ export default function TodayActivityTable({
                                                 size="xs"
                                                 color="light"
                                                 onClick={() => onResetPassword?.(user)}
-                                                title="Reset Password"
+                                                title="Đặt lại mật khẩu"
                                                 aria-label="Reset member password"
                                             >
                                                 <HiKey className="h-4 w-4" />

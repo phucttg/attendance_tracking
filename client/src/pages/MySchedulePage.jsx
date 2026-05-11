@@ -114,7 +114,7 @@ export default function MySchedulePage() {
     return (
         <div className="space-y-4">
             <PageHeader
-                title="My Schedule"
+                title="Lịch ca của tôi"
                 subtitle="Chọn ca cho 7 ngày tới (hôm nay + 6 ngày). Khi đã chốt ca sẽ không thể sửa lại."
             >
                 <Button color="blue" onClick={handleSave} disabled={loading || saving}>

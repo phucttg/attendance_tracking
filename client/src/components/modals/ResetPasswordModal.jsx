@@ -44,7 +44,7 @@ export default function ResetPasswordModal({ show, userName, onClose, onSubmit }
         
         // Client-side validation (defensive - button already disabled, but guard bypass scenarios)
         if (password.length < 8) {
-            setError('Password must be at least 8 characters');
+            setError('Mật khẩu phải có ít nhất 8 ký tự');
             return;
         }
 
@@ -59,7 +59,7 @@ export default function ResetPasswordModal({ show, userName, onClose, onSubmit }
             setPassword('');
             onClose();
         } catch (err) {
-            setError(err.response?.data?.message || err.message || 'Failed to reset password');
+            setError(err.response?.data?.message || err.message || 'Đặt lại mật khẩu thất bại');
         } finally {
             setLoading(false);
         }
@@ -77,11 +77,11 @@ export default function ResetPasswordModal({ show, userName, onClose, onSubmit }
 
     return (
         <Modal show={show} onClose={handleClose}>
-            <Modal.Header>Reset Password: {userName}</Modal.Header>
+            <Modal.Header>Đặt lại mật khẩu: {userName}</Modal.Header>
             <Modal.Body>
                 {error && <Alert color="failure" className="mb-4">{error}</Alert>}
                 <div>
-                    <Label htmlFor="new-password" value="New Password (min 8 characters)" />
+                    <Label htmlFor="new-password" value="Mật khẩu mới (tối thiểu 8 ký tự)" />
                     <TextInput
                         id="new-password"
                         type="password"
@@ -90,7 +90,7 @@ export default function ResetPasswordModal({ show, userName, onClose, onSubmit }
                             setPassword(e.target.value);
                             setError(''); // Clear error when user types (UX)
                         }}
-                        placeholder="Enter new password"
+                        placeholder="Nhập mật khẩu mới"
                         autoComplete="new-password"
                     />
                 </div>
@@ -98,10 +98,10 @@ export default function ResetPasswordModal({ show, userName, onClose, onSubmit }
             <Modal.Footer>
                 <Button onClick={handleSubmit} disabled={loading || password.length < 8}>
                     {loading ? <Spinner size="sm" className="mr-2" /> : <HiKey className="mr-2" />}
-                    Reset Password
+                    Đặt lại mật khẩu
                 </Button>
                 <Button color="gray" onClick={handleClose} disabled={loading}>
-                    Cancel
+                    Hủy
                 </Button>
             </Modal.Footer>
         </Modal>

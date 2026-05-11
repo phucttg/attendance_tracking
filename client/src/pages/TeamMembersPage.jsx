@@ -100,9 +100,9 @@ export default function TeamMembersPage() {
             if (isMounted.current && currentRequestId === requestIdRef.current) {
                 setMembers([]);
                 if (err.response?.status === 403) {
-                    setError('You do not have a team assigned. Please contact admin.');
+                    setError('Bạn chưa được phân vào nhóm. Liên hệ admin.');
                 } else {
-                    setError(err.response?.data?.message || 'Failed to load team members');
+                    setError(err.response?.data?.message || 'Không thể tải danh sách thành viên');
                 }
             }
         } finally {
@@ -158,21 +158,21 @@ export default function TeamMembersPage() {
                 </div>
             ) : members.length === 0 && !error ? (
                 <Alert color="info">
-                    No team members found. Your team may be empty.
+                    Nhóm chưa có thành viên.
                 </Alert>
             ) : (
                 /* Members Table */
                 <div className="overflow-x-auto">
                     <Table striped>
                         <Table.Head>
-                            <Table.HeadCell>Code</Table.HeadCell>
-                            <Table.HeadCell>Name</Table.HeadCell>
+                            <Table.HeadCell>Mã NV</Table.HeadCell>
+                            <Table.HeadCell>Họ tên</Table.HeadCell>
                             <Table.HeadCell>Email</Table.HeadCell>
-                            <Table.HeadCell>Status</Table.HeadCell>
+                            <Table.HeadCell>Trạng thái</Table.HeadCell>
                             <Table.HeadCell>Ca</Table.HeadCell>
-                            <Table.HeadCell>Check In</Table.HeadCell>
-                            <Table.HeadCell>Check Out</Table.HeadCell>
-                            <Table.HeadCell>Actions</Table.HeadCell>
+                            <Table.HeadCell>Check-in</Table.HeadCell>
+                            <Table.HeadCell>Check-out</Table.HeadCell>
+                            <Table.HeadCell>Thao tác</Table.HeadCell>
                         </Table.Head>
                         <Table.Body className="divide-y">
                             {members.map((item) => (
@@ -203,7 +203,7 @@ export default function TeamMembersPage() {
                                             onClick={() => handleViewClick(item.user._id)}
                                         >
                                             <HiEye className="mr-1 h-4 w-4" />
-                                            View
+                                            Xem
                                         </Button>
                                     </Table.Cell>
                                 </Table.Row>

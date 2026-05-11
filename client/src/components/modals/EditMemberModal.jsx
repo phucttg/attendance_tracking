@@ -115,7 +115,7 @@ export default function EditMemberModal({ show, user, teams, onClose, onSubmit }
             // Success → parent will show toast, close modal
             onClose();
         } catch (err) {
-            setError(err.response?.data?.message || err.message || 'Failed to update member');
+            setError(err.response?.data?.message || err.message || 'Cập nhật thất bại');
         } finally {
             setLoading(false);
         }
@@ -123,14 +123,14 @@ export default function EditMemberModal({ show, user, teams, onClose, onSubmit }
 
     return (
         <Modal show={show} onClose={onClose}>
-            <Modal.Header>Edit Member: {user?.name}</Modal.Header>
+            <Modal.Header>Chỉnh sửa: {user?.name}</Modal.Header>
             <Modal.Body>
                 {error && (
                     <Alert color="failure" className="mb-4">{error}</Alert>
                 )}
                 <div className="space-y-4">
                     <div>
-                        <Label htmlFor="edit-name" value="Name" />
+                        <Label htmlFor="edit-name" value="Họ tên" />
                         <TextInput
                             id="edit-name"
                             value={form.name || ''}
@@ -149,7 +149,7 @@ export default function EditMemberModal({ show, user, teams, onClose, onSubmit }
                         />
                     </div>
                     <div>
-                        <Label htmlFor="edit-username" value="Username" />
+                        <Label htmlFor="edit-username" value="Tên đăng nhập" />
                         <TextInput
                             id="edit-username"
                             value={form.username || ''}
@@ -158,20 +158,20 @@ export default function EditMemberModal({ show, user, teams, onClose, onSubmit }
                         />
                     </div>
                     <div>
-                        <Label htmlFor="edit-team" value="Team" />
+                        <Label htmlFor="edit-team" value="Nhóm" />
                         <Select
                             id="edit-team"
                             value={form.teamId || ''}
                             onChange={(e) => setForm({ ...form, teamId: e.target.value })}
                         >
-                            <option value="">No Team</option>
+                            <option value="">Không có nhóm</option>
                             {(teams || []).map((team) => (
                                 <option key={team._id} value={team._id}>{team.name}</option>
                             ))}
                         </Select>
                     </div>
                     <div>
-                        <Label htmlFor="edit-startDate" value="Start Date" />
+                        <Label htmlFor="edit-startDate" value="Ngày bắt đầu" />
                         <TextInput
                             id="edit-startDate"
                             type="date"
@@ -187,17 +187,17 @@ export default function EditMemberModal({ show, user, teams, onClose, onSubmit }
                             onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
                             className="w-4 h-4 text-blue-600 rounded border-gray-300"
                         />
-                        <Label htmlFor="edit-isActive" value="Active" />
+                        <Label htmlFor="edit-isActive" value="Đang hoạt động" />
                     </div>
                 </div>
             </Modal.Body>
             <Modal.Footer>
                 <Button onClick={handleSubmit} disabled={loading}>
                     {loading ? <Spinner size="sm" className="mr-2" /> : <HiCheck className="mr-2" />}
-                    Save
+                    Lưu
                 </Button>
                 <Button color="gray" onClick={onClose} disabled={loading}>
-                    Cancel
+                    Hủy
                 </Button>
             </Modal.Footer>
         </Modal>

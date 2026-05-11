@@ -133,7 +133,7 @@ export default function DashboardPage() {
         } catch (err) {
             // Ignore abort errors
             if (isAbortError(err)) return;
-            setError(err.response?.data?.message || 'Failed to load attendance');
+            setError(err.response?.data?.message || 'Không thể tải dữ liệu chấm công');
         } finally {
             // Guard: don't setState after abort/unmount
             if (signal?.aborted) return;
@@ -162,7 +162,7 @@ export default function DashboardPage() {
                 navigate(err.response?.data?.redirectTo || '/my-schedule');
                 return;
             }
-            setError(err.response?.data?.message || 'Check-in failed');
+            setError(err.response?.data?.message || 'Check-in thất bại');
         } finally {
             setActionLoading(false);
         }
@@ -181,7 +181,7 @@ export default function DashboardPage() {
             // Refetch without showing spinner (smooth UX)
             await fetchDashboardAttendance(undefined, false);
         } catch (err) {
-            setError(err.response?.data?.message || 'Check-out failed');
+            setError(err.response?.data?.message || 'Check-out thất bại');
         } finally {
             setActionLoading(false);
         }
@@ -229,7 +229,7 @@ export default function DashboardPage() {
     return (
         <div className="max-w-xl mx-auto">
             {/* Page Title */}
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+            <h1 className="text-2xl font-bold text-gray-900 mb-6">Tổng quan</h1>
 
             {/* Today's Date Card */}
             <Card className="mb-6 shadow-sm">

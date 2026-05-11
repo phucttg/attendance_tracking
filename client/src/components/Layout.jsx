@@ -20,22 +20,22 @@ export default function Layout() {
 
     // Section 1: Personal workspace (all users)
     const personalNavItems = [
-        { to: '/dashboard', label: 'Dashboard', icon: HiHome, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
-        { to: '/my-attendance', label: 'My Attendance', icon: HiClock, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
-        { to: '/my-schedule', label: 'My Schedule', icon: HiCalendar, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
-        { to: '/requests', label: 'Requests', icon: HiDocumentText, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
-        { to: '/profile', label: 'Profile', icon: HiUser, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
+        { to: '/dashboard', label: 'Tổng quan', icon: HiHome, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
+        { to: '/my-attendance', label: 'Chấm công của tôi', icon: HiClock, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
+        { to: '/my-schedule', label: 'Lịch ca của tôi', icon: HiCalendar, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
+        { to: '/requests', label: 'Yêu cầu', icon: HiDocumentText, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
+        { to: '/profile', label: 'Hồ sơ', icon: HiUser, roles: ['EMPLOYEE', 'MANAGER', 'ADMIN'] },
     ];
 
     // Section 2: Management tools (manager/admin only)
     // Memoized to prevent unnecessary re-renders in useEffect
     const managementNavItems = useMemo(() => [
-        { to: '/approvals', label: 'Approvals', icon: HiCheckCircle, roles: ['MANAGER', 'ADMIN'] },
-        { to: '/timesheet', label: 'Timesheet', icon: HiTable, roles: ['MANAGER', 'ADMIN'] },
-        { to: '/reports', label: 'Reports', icon: HiChartBar, roles: ['MANAGER', 'ADMIN'] },
-        { to: '/team/members', label: 'Team Members', icon: HiUsers, roles: ['MANAGER'] },
-        { to: '/admin/members', label: 'Members', icon: HiUserGroup, roles: ['ADMIN'] },
-        { to: '/admin/holidays', label: 'Holidays', icon: HiCalendar, roles: ['ADMIN'] },
+        { to: '/approvals', label: 'Duyệt yêu cầu', icon: HiCheckCircle, roles: ['MANAGER', 'ADMIN'] },
+        { to: '/timesheet', label: 'Bảng chấm công', icon: HiTable, roles: ['MANAGER', 'ADMIN'] },
+        { to: '/reports', label: 'Báo cáo', icon: HiChartBar, roles: ['MANAGER', 'ADMIN'] },
+        { to: '/team/members', label: 'Thành viên nhóm', icon: HiUsers, roles: ['MANAGER'] },
+        { to: '/admin/members', label: 'Nhân viên', icon: HiUserGroup, roles: ['ADMIN'] },
+        { to: '/admin/holidays', label: 'Ngày nghỉ lễ', icon: HiCalendar, roles: ['ADMIN'] },
     ], []);
 
     // Check if current route is a management page (for auto-expand logic)
@@ -112,7 +112,7 @@ export default function Layout() {
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <p className="text-gray-500">Loading...</p>
+                <p className="text-gray-500">Đang tải...</p>
             </div>
         );
     }
@@ -123,7 +123,7 @@ export default function Layout() {
             <Navbar fluid className="border-b">
                 <Navbar.Brand as={Link} to="/dashboard">
                     <HiClipboardCheck className="mr-2 h-6 w-6 text-primary-600" />
-                    <span className="text-xl font-bold text-gray-900">Attendance</span>
+                    <span className="text-xl font-bold text-gray-900">Chấm Công</span>
                 </Navbar.Brand>
                 <div className="flex md:order-2">
                     <Dropdown
@@ -134,7 +134,7 @@ export default function Layout() {
                             <span className="block text-sm font-medium">{user?.name}</span>
                             <span className="block text-sm text-gray-500">{user?.role}</span>
                         </Dropdown.Header>
-                        <Dropdown.Item onClick={logout}>Logout</Dropdown.Item>
+                        <Dropdown.Item onClick={logout}>Đăng xuất</Dropdown.Item>
                     </Dropdown>
                 </div>
             </Navbar>
@@ -160,8 +160,8 @@ export default function Layout() {
                         {/* Management section (collapsible, only if user has management items) */}
                         {managementItems.length > 0 && (
                             <Sidebar.ItemGroup>
-                                <Sidebar.Collapse 
-                                    label="Management" 
+                                <Sidebar.Collapse
+                                    label="Quản lý"
                                     open={isManagementOpen}
                                     onClick={toggleManagement}
                                 >

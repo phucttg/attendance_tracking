@@ -28,12 +28,12 @@ export const STATUS_COLORS = {
 
 // Status → Display label mapping
 export const STATUS_LABELS = {
-    'ON_TIME': 'On Time',
-    'LATE': 'Late',
-    'WORKING': 'Working',
-    'MISSING_CHECKOUT': 'Missing Checkout',
-    'UNREGISTERED': 'Unregistered',
-    'WEEKEND_OR_HOLIDAY': 'Weekend/Holiday',
-    'ABSENT': 'Absent',
+    'ON_TIME': 'Đúng giờ',
+    'LATE': 'Đi muộn',
+    'WORKING': 'Đang làm việc',
+    'MISSING_CHECKOUT': 'Thiếu check-out',
+    'UNREGISTERED': 'Chưa đăng ký ca',
+    'WEEKEND_OR_HOLIDAY': 'Cuối tuần/Nghỉ lễ',
+    'ABSENT': 'Vắng mặt',
     null: '-'
 };

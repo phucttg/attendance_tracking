@@ -30,12 +30,12 @@ export default function MemberSearchBar({ value, onChange, totalCount }) {
         <div className="mb-4 flex flex-wrap gap-4 items-end">
             {/* Search Input: Full width on mobile, flexible on desktop */}
             <div className="w-full sm:flex-1 sm:max-w-md min-w-0">
-                <Label htmlFor="member-search" value="Search" className="mb-1 block" />
+                <Label htmlFor="member-search" value="Tìm kiếm" className="mb-1 block" />
                 <TextInput
                     id="member-search"
                     type="text"
                     icon={HiSearch}
-                    placeholder="Name, email, or employee code..."
+                    placeholder="Tên, email hoặc mã nhân viên..."
                     value={safeValue}
                     onChange={(e) => onChange(e.target.value)}
                     autoComplete="off"
@@ -45,7 +45,7 @@ export default function MemberSearchBar({ value, onChange, totalCount }) {
 
             {/* Total Count: No wrap to prevent awkward line breaks */}
             <div className="text-sm text-gray-500 pb-2 whitespace-nowrap">
-                Total: {displayTotal} users
+                Tổng: {displayTotal} nhân viên
             </div>
         </div>
     );

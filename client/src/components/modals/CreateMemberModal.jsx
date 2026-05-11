@@ -81,14 +81,14 @@ export default function CreateMemberModal({ show, teams, onClose, onSuccess }) {
     // ═══════════════════════════════════════════════════════════════════════
 
     const validateForm = () => {
-        if (!form.employeeCode.trim()) return 'Employee code is required';
-        if (!form.name.trim()) return 'Name is required';
-        if (!form.email.trim()) return 'Email is required';
-        if (!isValidEmail(form.email)) return 'Invalid email format';
-        if (!form.password) return 'Password is required';
+        if (!form.employeeCode.trim()) return 'Vui lòng nhập mã nhân viên';
+        if (!form.name.trim()) return 'Vui lòng nhập họ tên';
+        if (!form.email.trim()) return 'Vui lòng nhập email';
+        if (!isValidEmail(form.email)) return 'Email không hợp lệ';
+        if (!form.password) return 'Vui lòng nhập mật khẩu';
         // P2 FIX: Trim password before length check to prevent whitespace-only passwords
-        if (form.password.trim().length < 8) return 'Password must be at least 8 characters';
-        if (!form.role) return 'Role is required';
+        if (form.password.trim().length < 8) return 'Mật khẩu phải có ít nhất 8 ký tự';
+        if (!form.role) return 'Vui lòng chọn vai trò';
         return null;
     };
 
@@ -136,7 +136,7 @@ export default function CreateMemberModal({ show, teams, onClose, onSuccess }) {
         } catch (err) {
             // P1 FIX: Only set error if still mounted
             if (isMountedRef.current) {
-                setError(err.response?.data?.message || 'Failed to create member');
+                setError(err.response?.data?.message || 'Tạo nhân viên thất bại');
             }
         } finally {
             // P1 FIX: Only setLoading if still mounted
@@ -182,7 +182,7 @@ export default function CreateMemberModal({ show, teams, onClose, onSuccess }) {
                             />
                         </div>
                         <div>
-                            <Label htmlFor="create-role" value="Role *" />
+                            <Label htmlFor="create-role" value="Vai trò *" />
                             <Select
                                 id="create-role"
                                 value={form.role}
@@ -224,12 +224,12 @@ export default function CreateMemberModal({ show, teams, onClose, onSuccess }) {
 
                     {/* Username (optional) */}
                     <div>
-                        <Label htmlFor="create-username" value="Username" />
+                        <Label htmlFor="create-username" value="Tên đăng nhập" />
                         <TextInput
                             id="create-username"
                             value={form.username}
                             onChange={(e) => setForm({ ...form, username: e.target.value })}
-                            placeholder="Optional"
+                            placeholder="Không bắt buộc"
                             maxLength={MAX_LENGTHS.username}
                             autoComplete="off"
                         />
@@ -243,7 +243,7 @@ export default function CreateMemberModal({ show, teams, onClose, onSuccess }) {
                             type="password"
                             value={form.password}
                             onChange={(e) => setForm({ ...form, password: e.target.value })}
-                            placeholder="Min 8 characters"
+                            placeholder="Tối thiểu 8 ký tự"
                             maxLength={MAX_LENGTHS.password}
                             autoComplete="new-password"
                         />
@@ -251,13 +251,13 @@ export default function CreateMemberModal({ show, teams, onClose, onSuccess }) {
 
                     {/* Team (optional) */}
                     <div>
-                        <Label htmlFor="create-teamId" value="Team" />
+                        <Label htmlFor="create-teamId" value="Nhóm" />
                         <Select
                             id="create-teamId"
                             value={form.teamId}
                             onChange={(e) => setForm({ ...form, teamId: e.target.value })}
                         >
-                            <option value="">Select team...</option>
+                            <option value="">Chọn nhóm...</option>
                             {(teams || []).map((team) => (
                                 <option key={team._id} value={team._id}>
                                     {team.name}
@@ -284,8 +284,8 @@ export default function CreateMemberModal({ show, teams, onClose, onSuccess }) {
                                 value={form.isActive.toString()}
                                 onChange={(e) => setForm({ ...form, isActive: e.target.value === 'true' })}
                             >
-                                <option value="true">Active</option>
-                                <option value="false">Inactive</option>
+                                <option value="true">Đang hoạt động</option>
+                                <option value="false">Ngừng hoạt động</option>
                             </Select>
                         </div>
                     </div>

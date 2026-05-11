@@ -155,10 +155,10 @@ export default function AdminMembersPage() {
         try {
             await updateUser(userId, data);
             setEditUser(null); // P3 FIX: Close modal explicitly
-            showToast('Member updated successfully', 'success');
+            showToast('Cập nhật thành công', 'success');
             viewMode === 'today' ? refetchToday() : refetchAllUsers();
         } catch (e) {
-            showToast(e.response?.data?.message || 'Failed to update member', 'failure');
+            showToast(e.response?.data?.message || 'Cập nhật thất bại', 'failure');
         }
     };
 
@@ -169,13 +169,13 @@ export default function AdminMembersPage() {
             setResetUser(null); // P3 FIX: Close modal explicitly
             showToast('Password updated', 'success');
         } catch (e) {
-            showToast(e.response?.data?.message || 'Failed to reset password', 'failure');
+            showToast(e.response?.data?.message || 'Đặt lại mật khẩu thất bại', 'failure');
         }
     };
 
     const handleCreateSuccess = () => {
         setCreateModal(false); // P3 FIX: Close modal explicitly
-        showToast('Member created successfully', 'success');
+        showToast('Tạo nhân viên thành công', 'success');
         viewMode === 'today' ? refetchToday() : refetchAllUsers();
         // Note: NOT resetting page to 1 because backend sorts by employeeCode (ascending)
         // New user may not appear on page 1
@@ -293,13 +293,13 @@ export default function AdminMembersPage() {
                     color={viewMode === 'today' ? 'info' : 'gray'}
                     onClick={() => handleViewModeChange('today')}
                 >
-                    Today Activity
+                    Hoạt động hôm nay
                 </Button>
                 <Button
                     color={viewMode === 'all' ? 'info' : 'gray'}
                     onClick={() => handleViewModeChange('all')}
                 >
-                    All Users
+                    Tất cả nhân viên
                 </Button>
             </div>
 
@@ -368,7 +368,7 @@ export default function AdminMembersPage() {
                     {/* Empty State for scope=team but no team selected */}
                     {scope === 'team' && !teamId ? (
                         <Alert color="info">
-                            Please select a team to view members.
+                            Vui lòng chọn nhóm để xem thành viên.
                         </Alert>
                     ) : (
                         <TodayActivityTable

@@ -64,13 +64,13 @@ export default function TeamMemberDetailPage() {
     };
 
     const statusLabels = {
-        'ON_TIME': 'On Time',
-        'LATE': 'Late',
-        'WORKING': 'Working',
-        'MISSING_CHECKOUT': 'Missing Checkout',
-        'WEEKEND_OR_HOLIDAY': 'Weekend/Holiday',
-        'UNREGISTERED': 'Unregistered',
-        'ABSENT': 'Absent',
+        'ON_TIME': 'Đúng giờ',
+        'LATE': 'Đi muộn',
+        'WORKING': 'Đang làm việc',
+        'MISSING_CHECKOUT': 'Thiếu check-out',
+        'WEEKEND_OR_HOLIDAY': 'Cuối tuần/Nghỉ lễ',
+        'UNREGISTERED': 'Chưa đăng ký ca',
+        'ABSENT': 'Vắng mặt',
         null: '-'
     };
 
@@ -110,11 +110,11 @@ export default function TeamMemberDetailPage() {
                 if (isMounted.current) {
                     // Handle 403 (other team) vs 404 (not found)
                     if (err.response?.status === 403) {
-                        setError('You do not have access to this member');
+                        setError('Không có quyền xem thành viên này');
                     } else if (err.response?.status === 404) {
-                        setError('Member not found');
+                        setError('Không tìm thấy thành viên');
                     } else {
-                        setError(err.response?.data?.message || 'Failed to load member');
+                        setError(err.response?.data?.message || 'Không thể tải thông tin thành viên');
                     }
                 }
             } finally {
@@ -146,7 +146,7 @@ export default function TeamMemberDetailPage() {
                 if (err.response?.status === 403) {
                     setAttendanceError('You do not have access to this member\'s attendance');
                 } else {
-                    setAttendanceError(err.response?.data?.message || 'Failed to load attendance');
+                    setAttendanceError(err.response?.data?.message || 'Không thể tải dữ liệu chấm công');
                 }
             }
         } finally {
@@ -216,7 +216,7 @@ export default function TeamMemberDetailPage() {
         for (let i = 0; i < 12; i++) {
             const d = new Date(gmt7Now.getFullYear(), gmt7Now.getMonth() - i, 1);
             const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+            const label = d.toLocaleString('vi-VN', { month: 'long', year: 'numeric' });
             options.push({ value, label });
         }
         return options;
@@ -227,7 +227,7 @@ export default function TeamMemberDetailPage() {
         if (teamsLoading) return 'Loading...';
         if (teams.length === 0) return 'Unknown'; // Teams failed to load
         const team = teams.find(t => t._id === teamId);
-        return team?.name || 'No Team';
+        return team?.name || 'Chưa có nhóm';
     };
 
     // Loading state
@@ -248,7 +248,7 @@ export default function TeamMemberDetailPage() {
                 </Alert>
                 <Button color="light" className="mt-4" onClick={() => navigate('/team/members')}>
                     <HiArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Team Members
+                    Quay lại
                 </Button>
             </div>
         );
@@ -271,34 +271,34 @@ export default function TeamMemberDetailPage() {
 
             {/* Profile Card */}
             <Card className="mb-6">
-                <h2 className="text-lg font-semibold text-gray-700 mb-4">Profile</h2>
+                <h2 className="text-lg font-semibold text-gray-700 mb-4">Thông tin cá nhân</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div>
                         <p className="text-sm text-gray-500">Email</p>
                         <p className="font-medium">{user?.email || '-'}</p>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500">Username</p>
+                        <p className="text-sm text-gray-500">Tên đăng nhập</p>
                         <p className="font-medium">{user?.username || '-'}</p>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500">Role</p>
+                        <p className="text-sm text-gray-500">Vai trò</p>
                         <Badge color="info">{user?.role}</Badge>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500">Team</p>
-                        <p className="font-medium">{user?.teamId ? getTeamName(user.teamId) : 'No Team'}</p>
+                        <p className="text-sm text-gray-500">Nhóm</p>
+                        <p className="font-medium">{user?.teamId ? getTeamName(user.teamId) : 'Chưa có nhóm'}</p>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500">Start Date</p>
+                        <p className="text-sm text-gray-500">Ngày bắt đầu</p>
                         <p className="font-medium">
                             {user?.startDate ? formatDate(user.startDate.split('T')[0]) : '-'}
                         </p>
                     </div>
                     <div>
-                        <p className="text-sm text-gray-500">Status</p>
+                        <p className="text-sm text-gray-500">Trạng thái</p>
                         <Badge color={user?.isActive ? 'success' : 'failure'}>
-                            {user?.isActive ? 'Active' : 'Inactive'}
+                            {user?.isActive ? 'Đang hoạt động' : 'Ngừng hoạt động'}
                         </Badge>
                     </div>
                 </div>
@@ -330,7 +330,7 @@ export default function TeamMemberDetailPage() {
             {/* Monthly Attendance */}
             <Card>
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold text-gray-700">Monthly Attendance</h2>
+                    <h2 className="text-lg font-semibold text-gray-700">Chấm công tháng</h2>
                     <div className="flex items-center gap-2">
                         <Label htmlFor="month" value="Month:" className="sr-only" />
                         <Select
@@ -355,17 +355,17 @@ export default function TeamMemberDetailPage() {
                 ) : attendanceError ? (
                     <Alert color="failure">{attendanceError}</Alert>
                 ) : attendance.length === 0 ? (
-                    <Alert color="info">No attendance records for this month.</Alert>
+                    <Alert color="info">Không có dữ liệu chấm công tháng này.</Alert>
                 ) : (
                     <div className="overflow-x-auto">
                         <Table striped>
                             <Table.Head>
-                                <Table.HeadCell>Date</Table.HeadCell>
-                                <Table.HeadCell>Check In</Table.HeadCell>
-                                <Table.HeadCell>Check Out</Table.HeadCell>
-                                <Table.HeadCell>Status</Table.HeadCell>
+                                <Table.HeadCell>Ngày</Table.HeadCell>
+                                <Table.HeadCell>Check-in</Table.HeadCell>
+                                <Table.HeadCell>Check-out</Table.HeadCell>
+                                <Table.HeadCell>Trạng thái</Table.HeadCell>
                                 <Table.HeadCell>Ca</Table.HeadCell>
-                                <Table.HeadCell>Work Time</Table.HeadCell>
+                                <Table.HeadCell>Giờ làm</Table.HeadCell>
                                 <Table.HeadCell>OT</Table.HeadCell>
                             </Table.Head>
                             <Table.Body className="divide-y">

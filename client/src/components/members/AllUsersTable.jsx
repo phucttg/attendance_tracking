@@ -50,19 +50,19 @@ export default function AllUsersTable({
             <div className="overflow-x-auto">
                 <Table striped>
                     <Table.Head>
-                        <Table.HeadCell>Code</Table.HeadCell>
-                        <Table.HeadCell>Name</Table.HeadCell>
+                        <Table.HeadCell>Mã NV</Table.HeadCell>
+                        <Table.HeadCell>Họ tên</Table.HeadCell>
                         <Table.HeadCell>Email</Table.HeadCell>
-                        <Table.HeadCell>Role</Table.HeadCell>
-                        <Table.HeadCell>Active</Table.HeadCell>
-                        <Table.HeadCell>Actions</Table.HeadCell>
+                        <Table.HeadCell>Vai trò</Table.HeadCell>
+                        <Table.HeadCell>Trạng thái</Table.HeadCell>
+                        <Table.HeadCell>Thao tác</Table.HeadCell>
                     </Table.Head>
                     <Table.Body className="divide-y">
                         {/* Empty state */}
                         {isEmpty ? (
                             <Table.Row>
                                 <Table.Cell colSpan={6} className="text-center py-8 text-gray-500">
-                                    No users found.
+                                    Không tìm thấy nhân viên.
                                 </Table.Cell>
                             </Table.Row>
                         ) : (
@@ -91,8 +91,8 @@ export default function AllUsersTable({
                                             // P1 FIX: Distinguish between true/false/undefined
                                             const active = user.isActive;
                                             const label =
-                                                active === true ? '✓ Active' :
-                                                    active === false ? '✗ Inactive' :
+                                                active === true ? '✓ Đang hoạt động' :
+                                                    active === false ? '✗ Ngừng hoạt động' :
                                                         '—';  // undefined/null
                                             const colorClass =
                                                 active === true ? 'text-green-600' :
@@ -109,7 +109,7 @@ export default function AllUsersTable({
                                                 size="xs"
                                                 color="light"
                                                 onClick={() => onViewDetail?.(user._id)}
-                                                title="View Detail"
+                                                title="Xem chi tiết"
                                                 aria-label="View user detail"
                                             >
                                                 <HiEye className="h-4 w-4" />
@@ -121,7 +121,7 @@ export default function AllUsersTable({
                                                         size="xs"
                                                         color="light"
                                                         onClick={() => onEdit?.(user)}
-                                                        title="Edit User"
+                                                        title="Chỉnh sửa"
                                                         aria-label="Edit user"
                                                     >
                                                         <HiPencil className="h-4 w-4" />
@@ -130,7 +130,7 @@ export default function AllUsersTable({
                                                         size="xs"
                                                         color="light"
                                                         onClick={() => onResetPassword?.(user)}
-                                                        title="Reset Password"
+                                                        title="Đặt lại mật khẩu"
                                                         aria-label="Reset user password"
                                                     >
                                                         <HiKey className="h-4 w-4" />
@@ -143,7 +143,7 @@ export default function AllUsersTable({
                                                     size="xs"
                                                     color="success"
                                                     onClick={() => onRestore?.(user._id, user.name)}
-                                                    title="Restore User"
+                                                    title="Khôi phục"
                                                     aria-label="Restore user"
                                                 >
                                                     <HiReply className="h-4 w-4" />
@@ -153,7 +153,7 @@ export default function AllUsersTable({
                                                     size="xs"
                                                     color="failure"
                                                     onClick={() => onDelete?.(user._id, user.name)}
-                                                    title="Delete User"
+                                                    title="Xóa"
                                                     aria-label="Delete user"
                                                 >
                                                     <HiTrash className="h-4 w-4" />

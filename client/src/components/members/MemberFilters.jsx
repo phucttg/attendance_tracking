@@ -79,14 +79,14 @@ export default function MemberFilters({
         <div className="flex flex-wrap gap-4 mb-4 items-end">
             {/* Scope Select */}
             <div className="w-full sm:w-auto">
-                <Label htmlFor="scope" value="Scope" className="mb-1 block" />
+                <Label htmlFor="scope" value="Phạm vi" className="mb-1 block" />
                 <Select
                     id="scope"
                     value={scope}
                     onChange={handleScopeChange}
                 >
-                    <option value="company">All Company</option>
-                    <option value="team">By Team</option>
+                    <option value="company">Toàn công ty</option>
+                    <option value="team">Theo nhóm</option>
                 </Select>
             </div>
 
@@ -101,13 +101,13 @@ export default function MemberFilters({
                         disabled={teamsLoading}
                     >
                         <option value="">
-                            {teamsLoading 
-                                ? 'Loading teams...' 
-                                : teamsFetchError 
-                                ? 'Failed to load teams - please refresh' 
-                                : teamsEmpty 
-                                ? 'No teams available' 
-                                : 'Select team...'}
+                            {teamsLoading
+                                ? 'Đang tải nhóm...'
+                                : teamsFetchError
+                                ? 'Không thể tải danh sách nhóm'
+                                : teamsEmpty
+                                ? 'Chưa có nhóm nào'
+                                : 'Chọn nhóm...'}
                         </option>
                         {(teams || []).map((team) => (
                             <option key={team._id} value={team._id}>
@@ -121,7 +121,7 @@ export default function MemberFilters({
             {/* Today Date Display */}
             {todayDate && (
                 <div className="text-sm text-gray-500 sm:ml-auto pb-2 w-full sm:w-auto text-left">
-                    Today: {todayDate}
+                    Hôm nay: {todayDate}
                 </div>
             )}
         </div>

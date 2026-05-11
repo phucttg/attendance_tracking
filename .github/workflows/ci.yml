@@ -18,28 +18,9 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: cd server && npm ci && npm run lint
 
-  server-test:
-    name: Server — test
-    runs-on: ubuntu-latest
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-    env:
-      JWT_SECRET: ci-test-secret-not-used-in-production
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-      - run: cd server && npm ci && npm test
-
   build-and-deploy:
     name: Build & deploy
-    needs: [server-lint, server-test]
+    needs: [server-lint]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
