@@ -26,6 +26,7 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017/attendance
       REDIS_URL: redis://redis:6379
+      MONGODB_REPLICA_SET: 'false'
 
   client:
     build: ./client
