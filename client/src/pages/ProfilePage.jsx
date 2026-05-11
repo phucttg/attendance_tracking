@@ -101,7 +101,7 @@ export default function ProfilePage() {
                 {/* Profile Fields Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <ProfileField label="Mã nhân viên" value={user.employeeCode} />
-                    <ProfileField label="Email" value={user.email} />
+                    <ProfileField label="Email" value={user.email || '-'} />
                     <ProfileField label="Username" value={user.username || '-'} />
                     <ProfileField
                         label="Team"

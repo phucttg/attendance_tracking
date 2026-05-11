@@ -3,6 +3,24 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { JWT_SECRET, JWT_EXPIRES_IN } from '../config/jwt.js';
 
+const notDeletedCondition = {
+  $or: [
+    { deletedAt: null },
+    { deletedAt: { $exists: false } }
+  ]
+};
+
+const toAuthUserProfile = (user) => ({
+  _id: user._id,
+  name: user.name,
+  email: user.email,
+  username: user.username,
+  role: user.role,
+  employeeCode: user.employeeCode,
+  teamId: user.teamId,
+  startDate: user.startDate
+});
+
 /**
  * Validates login credentials and returns JWT + user profile.
  * @param {string} identifier - Email or username
@@ -20,12 +38,7 @@ export const loginUser = async (identifier, password) => {
           { username: normalizedIdentifier }
         ]
       },
-      {
-        $or: [
-          { deletedAt: null },
-          { deletedAt: { $exists: false } }
-        ]
-      }
+      notDeletedCondition
     ]
   });
 
@@ -60,13 +73,7 @@ export const loginUser = async (identifier, password) => {
 
   return {
     token,
-    user: {
-      _id: user._id,
-      name: user.name,
-      role: user.role,
-      employeeCode: user.employeeCode,
-      teamId: user.teamId
-    }
+    user: toAuthUserProfile(user)
   };
 };
 
@@ -78,10 +85,7 @@ export const loginUser = async (identifier, password) => {
 export const getCurrentUser = async (userId) => {
   const user = await User.findOne({
     _id: userId,
-    $or: [
-      { deletedAt: null },
-      { deletedAt: { $exists: false } }
-    ]
+    ...notDeletedCondition
   }).select('-passwordHash');
 
   if (!user) {
@@ -96,11 +100,5 @@ export const getCurrentUser = async (userId) => {
     throw error;
   }
 
-  return {
-    _id: user._id,
-    name: user.name,
-    role: user.role,
-    employeeCode: user.employeeCode,
-    teamId: user.teamId
-  };
+  return toAuthUserProfile(user);
 };
