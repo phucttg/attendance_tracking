@@ -217,7 +217,7 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
         
         try {
             await cancelOtRequest(request._id);
-            alert('✅ Đã hủy yêu cầu OT');
+            alert(' Đã hủy yêu cầu OT');
             
             // Trigger refetch
             if (onRefresh) {
@@ -225,7 +225,7 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
             }
         } catch (err) {
             const errorMsg = err.response?.data?.message || 'Không thể hủy yêu cầu OT';
-            alert(`❌ ${errorMsg}`);
+            alert(` ${errorMsg}`);
         } finally {
             setCancelLoading(null);
         }
@@ -286,7 +286,7 @@ export default function MyRequestsTable({ requests, pagination, onPageChange, on
                                                         </div>
                                                         {req.actualOtMinutes != null && (
                                                             <div>
-                                                                <span className="text-gray-600">✅ OT thực tế:</span>
+                                                                <span className="text-gray-600"> OT thực tế:</span>
                                                                 <span className="ml-2 font-bold text-green-600 whitespace-nowrap">
                                                                     {Math.floor(req.actualOtMinutes / 60)}h {req.actualOtMinutes % 60}m
                                                                 </span>
