@@ -205,6 +205,33 @@ export const createUser = async (req, res) => {
         return res.status(statusCode).json({ message: responseMessage });
     }
 };
+
+/**
+ * GET /api/admin/users/next-employee-code
+ * Generate next employee code for selected role (Admin only).
+ *
+ * Query: role=ADMIN|MANAGER|EMPLOYEE
+ * Response: { employeeCode }
+ */
+export const getNextEmployeeCode = async (req, res) => {
+    try {
+        // RBAC: ADMIN only (defense-in-depth, route also has middleware)
+        if (req.user.role !== 'ADMIN') {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        const employeeCode = await userService.getNextEmployeeCode(req.query.role);
+        return res.status(200).json({ employeeCode });
+    } catch (error) {
+        req.log.error({ err: error }, 'getNextEmployeeCode error');
+
+        const statusCode = error.statusCode || 500;
+        const responseMessage = statusCode < 500
+            ? (error.message || 'Request failed')
+            : 'Internal server error';
+        return res.status(statusCode).json({ message: responseMessage });
+    }
+};
 /**
  * GET /api/admin/users (UPDATED v2.3)
  * Get paginated users (Admin only).

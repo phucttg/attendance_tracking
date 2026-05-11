@@ -63,6 +63,16 @@ export const deleteHoliday = (holidayId) =>
 // ============================================
 
 /**
+ * Get the next generated employee code for a role.
+ * Roles: ADMIN only
+ * @param {string} role - ADMIN | MANAGER | EMPLOYEE
+ * @param {Object} [config] - Optional axios config
+ * @returns {Promise} { employeeCode }
+ */
+export const getNextEmployeeCode = (role, config) =>
+    client.get('/admin/users/next-employee-code', { ...config, params: { role } });
+
+/**
  * Create a new user.
  * Roles: ADMIN only
  * 

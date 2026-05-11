@@ -4,6 +4,106 @@ import Request from '../models/Request.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 
+const VALID_ROLES = ['ADMIN', 'MANAGER', 'EMPLOYEE'];
+const EMPLOYEE_CODE_MIN_DIGITS = 3;
+const EMPLOYEE_CODE_CREATE_RETRY_LIMIT = 3;
+
+export const EMPLOYEE_CODE_PREFIX_BY_ROLE = Object.freeze({
+  ADMIN: 'ADM',
+  MANAGER: 'MNG',
+  EMPLOYEE: 'EMP'
+});
+
+const createServiceError = (message, statusCode) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+export function getEmployeeCodePrefix(role) {
+  return EMPLOYEE_CODE_PREFIX_BY_ROLE[role] || null;
+}
+
+export function getEmployeeCodePattern(role) {
+  const prefix = getEmployeeCodePrefix(role);
+  return prefix ? new RegExp(`^${prefix}\\d{${EMPLOYEE_CODE_MIN_DIGITS},}$`) : null;
+}
+
+export function isValidEmployeeCodeForRole(employeeCode, role) {
+  if (typeof employeeCode !== 'string') return false;
+  const pattern = getEmployeeCodePattern(role);
+  return Boolean(pattern?.test(employeeCode.trim()));
+}
+
+function assertValidRole(role) {
+  if (!role) {
+    throw createServiceError('Role is required', 400);
+  }
+  if (!VALID_ROLES.includes(role)) {
+    throw createServiceError('Invalid role. Must be ADMIN, MANAGER, or EMPLOYEE', 400);
+  }
+}
+
+function assertEmployeeCodeForRole(employeeCode, role) {
+  if (!employeeCode || typeof employeeCode !== 'string' || !employeeCode.trim()) {
+    throw createServiceError('Employee code is required', 400);
+  }
+  if (!isValidEmployeeCodeForRole(employeeCode, role)) {
+    const prefix = getEmployeeCodePrefix(role);
+    throw createServiceError(
+      `Employee code for ${role} must match ${prefix} followed by at least 3 digits`,
+      400
+    );
+  }
+}
+
+function isDuplicateKeyForField(error, fieldName) {
+  return error?.code === 11000 &&
+    Object.prototype.hasOwnProperty.call(error.keyPattern || {}, fieldName);
+}
+
+function serializeUser(user) {
+  return {
+    user: {
+      _id: user._id,
+      employeeCode: user.employeeCode,
+      name: user.name,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      teamId: user.teamId,
+      isActive: user.isActive,
+      startDate: user.startDate,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    }
+  };
+}
+
+export const getNextEmployeeCode = async (role) => {
+  assertValidRole(role);
+
+  const prefix = getEmployeeCodePrefix(role);
+  const pattern = getEmployeeCodePattern(role);
+  const users = await User.find({
+    role,
+    employeeCode: { $regex: pattern }
+  })
+    .select('employeeCode')
+    .lean();
+
+  let maxSuffix = 0;
+  for (const user of users) {
+    const suffix = user.employeeCode.slice(prefix.length);
+    const numericSuffix = Number.parseInt(suffix, 10);
+    if (Number.isFinite(numericSuffix) && numericSuffix > maxSuffix) {
+      maxSuffix = numericSuffix;
+    }
+  }
+
+  return `${prefix}${String(maxSuffix + 1).padStart(EMPLOYEE_CODE_MIN_DIGITS, '0')}`;
+};
+
 /**
  * Create a new user (Admin workflow).
  *
@@ -16,11 +116,8 @@ export const createUser = async (data) => {
   // ============================================
   // VALIDATION: Required fields (with type check - consistent with resetPassword)
   // ============================================
-  if (!employeeCode || typeof employeeCode !== 'string' || !employeeCode.trim()) {
-    const error = new Error('Employee code is required');
-    error.statusCode = 400;
-    throw error;
-  }
+  assertValidRole(role);
+  assertEmployeeCodeForRole(employeeCode, role);
   if (!name || typeof name !== 'string' || !name.trim()) {
     const error = new Error('Name is required');
     error.statusCode = 400;
@@ -41,17 +138,6 @@ export const createUser = async (data) => {
     error.statusCode = 400;
     throw error;
   }
-  if (!role) {
-    const error = new Error('Role is required');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!['ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)) {
-    const error = new Error('Invalid role. Must be ADMIN, MANAGER, or EMPLOYEE');
-    error.statusCode = 400;
-    throw error;
-  }
-
   // ============================================
   // VALIDATION: Optional fields
   // ============================================
@@ -101,8 +187,7 @@ export const createUser = async (data) => {
   // ============================================
   // CREATE USER
   // ============================================
-  const user = await User.create({
-    employeeCode: employeeCode.trim(),
+  const baseUserData = {
     name: name.trim(),
     email: email.trim().toLowerCase(),
     username: usernameNorm,
@@ -111,27 +196,31 @@ export const createUser = async (data) => {
     teamId: teamId || undefined,
     startDate: parsedStartDate,
     isActive: isActiveNorm
-  });
-
-  // ============================================
-  // RESPONSE: Sanitized (no passwordHash, __v)
-  // Per API_SPEC.md security rules
-  // ============================================
-  return {
-    user: {
-      _id: user._id,
-      employeeCode: user.employeeCode,
-      name: user.name,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      teamId: user.teamId,
-      isActive: user.isActive,
-      startDate: user.startDate,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt
-    }
   };
+
+  let candidateEmployeeCode = await getNextEmployeeCode(role);
+  for (let attempt = 0; attempt <= EMPLOYEE_CODE_CREATE_RETRY_LIMIT; attempt += 1) {
+    try {
+      const user = await User.create({
+        ...baseUserData,
+        employeeCode: candidateEmployeeCode
+      });
+      return serializeUser(user);
+    } catch (error) {
+      if (!isDuplicateKeyForField(error, 'employeeCode')) {
+        throw error;
+      }
+
+      if (attempt === EMPLOYEE_CODE_CREATE_RETRY_LIMIT) {
+        throw createServiceError(
+          'Employee code already exists. Please refresh the employee code and try again.',
+          409
+        );
+      }
+
+      candidateEmployeeCode = await getNextEmployeeCode(role);
+    }
+  }
 };
 
 /**

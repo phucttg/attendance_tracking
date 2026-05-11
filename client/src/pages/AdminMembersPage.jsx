@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button, Alert, Spinner } from 'flowbite-react';
 import { HiRefresh, HiPlus, HiTrash, HiReply } from 'react-icons/hi';
 import { useNavigate } from 'react-router-dom';
 
 // API
 import { getTeams, getTodayAttendance, updateUser, resetPassword } from '../api/memberApi';
-import { getAdminUsers, softDeleteUser, restoreUser, purgeDeletedUsers } from '../api/adminApi';
+import { getAdminUsers, getNextEmployeeCode, softDeleteUser, restoreUser, purgeDeletedUsers } from '../api/adminApi';
+import { isAbortError } from '../utils/errorHelpers';
 
 // Hooks
 import { usePagination } from '../hooks/usePagination';
@@ -25,6 +26,8 @@ import MemberFilters from '../components/members/MemberFilters';
 import MemberSearchBar from '../components/members/MemberSearchBar';
 import TodayActivityTable from '../components/members/TodayActivityTable';
 import AllUsersTable from '../components/members/AllUsersTable';
+
+const EMPLOYEE_CODE_ROLES = ['EMPLOYEE', 'MANAGER', 'ADMIN'];
 
 /**
  * AdminMembersPage: Admin views all members with today's activity or paginated user list.
@@ -65,6 +68,8 @@ export default function AdminMembersPage() {
     const [createModal, setCreateModal] = useState(false);
     const [includeDeleted, setIncludeDeleted] = useState(false);
     const [actionLoading, setActionLoading] = useState(null); // P0 FIX: Track userId being acted on
+    const [employeeCodeCache, setEmployeeCodeCache] = useState({});
+    const [employeeCodeLoadingByRole, setEmployeeCodeLoadingByRole] = useState({});
 
     // ═══════════════════════════════════════════════════════════════════════
     // CUSTOM HOOKS
@@ -146,6 +151,42 @@ export default function AdminMembersPage() {
         };
     }, []);
 
+    const refreshEmployeeCode = useCallback(async (role, config = {}) => {
+        if (!EMPLOYEE_CODE_ROLES.includes(role)) return '';
+
+        setEmployeeCodeLoadingByRole((current) => ({ ...current, [role]: true }));
+
+        try {
+            const res = await getNextEmployeeCode(role, config);
+            const employeeCode = res.data?.employeeCode || '';
+            if (employeeCode) {
+                setEmployeeCodeCache((current) => ({ ...current, [role]: employeeCode }));
+            }
+            return employeeCode;
+        } catch (err) {
+            if (!isAbortError(err)) throw err;
+            return '';
+        } finally {
+            if (!config.signal?.aborted) {
+                setEmployeeCodeLoadingByRole((current) => ({ ...current, [role]: false }));
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        const controller = new AbortController();
+
+        EMPLOYEE_CODE_ROLES.forEach((role) => {
+            refreshEmployeeCode(role, { signal: controller.signal }).catch((err) => {
+                if (!isAbortError(err)) {
+                    console.error('Failed to prefetch employee code:', err);
+                }
+            });
+        });
+
+        return () => controller.abort();
+    }, [refreshEmployeeCode]);
+
     // ═══════════════════════════════════════════════════════════════════════
     // HANDLERS
     // ═══════════════════════════════════════════════════════════════════════
@@ -173,12 +214,21 @@ export default function AdminMembersPage() {
         }
     };
 
-    const handleCreateSuccess = () => {
+    const handleCreateSuccess = (createdUser) => {
         setCreateModal(false); // P3 FIX: Close modal explicitly
         showToast('Tạo nhân viên thành công', 'success');
         viewMode === 'today' ? refetchToday() : refetchAllUsers();
+        if (createdUser?.role) {
+            refreshEmployeeCode(createdUser.role).catch((err) => {
+                console.error('Failed to refresh employee code after create:', err);
+            });
+        }
         // Note: NOT resetting page to 1 because backend sorts by employeeCode (ascending)
         // New user may not appear on page 1
+    };
+
+    const handleOpenCreateModal = () => {
+        setCreateModal(true);
     };
 
     const handleViewDetail = (userId) => {
@@ -277,7 +327,7 @@ export default function AdminMembersPage() {
         <div>
             {/* Page Header */}
             <PageHeader title="Quản lý nhân viên">
-                <Button color="success" onClick={() => setCreateModal(true)}>
+                <Button color="success" onClick={handleOpenCreateModal}>
                     <HiPlus className="mr-2 h-4 w-4" />
                     Thêm nhân viên
                 </Button>
@@ -416,6 +466,9 @@ export default function AdminMembersPage() {
             <CreateMemberModal
                 show={createModal}
                 teams={teams || []}
+                employeeCodeCache={employeeCodeCache}
+                employeeCodeLoadingByRole={employeeCodeLoadingByRole}
+                onRefreshEmployeeCode={refreshEmployeeCode}
                 onClose={() => setCreateModal(false)}
                 onSuccess={handleCreateSuccess}
             />

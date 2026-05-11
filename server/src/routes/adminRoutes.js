@@ -18,6 +18,7 @@ const router = express.Router();
 // Per API_SPEC.md#L338-L372
 router.post('/users', authenticate, adminMutationLimiter, userController.createUser);
 router.get('/users', authenticate, adminReadLimiter, userController.getAllUsers);
+router.get('/users/next-employee-code', authenticate, adminReadLimiter, userController.getNextEmployeeCode);
 
 // POST /api/admin/users/purge - Purge soft-deleted users past retention period
 // IMPORTANT: Must be BEFORE :id routes to avoid 'purge' being treated as an ID
