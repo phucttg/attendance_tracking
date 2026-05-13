@@ -7,17 +7,16 @@ import { getHolidayDatesForMonth } from '../utils/holidayUtils.js';
 import { getDateRange, getTodayDateKey, isWeekend } from '../utils/dateUtils.js';
 import { normalizeScheduleType } from '../utils/schedulePolicy.js';
 import { getTransactionOptions, isReplicaSetAvailable } from '../config/database.js';
+import {
+  resolveRawScheduleTypeValidationReason,
+  resolveScheduleMutationDecision,
+  resolveScheduleReadonlyState,
+  WORK_SCHEDULE_LOCK_REASONS,
+  WORK_SCHEDULE_MUTATION_ACTIONS
+} from './workSchedulePolicy.js';
 
 export const WORK_SCHEDULE_WINDOW_DAYS = 7;
-
-export const WORK_SCHEDULE_LOCK_REASONS = {
-  PAST_DATE: 'PAST_DATE',
-  ALREADY_CHECKED_IN: 'ALREADY_CHECKED_IN',
-  NON_WORKDAY: 'NON_WORKDAY',
-  OUTSIDE_WINDOW: 'OUTSIDE_WINDOW',
-  OT_LOCKED: 'OT_LOCKED',
-  SCHEDULE_LOCKED: 'SCHEDULE_LOCKED'
-};
+export { WORK_SCHEDULE_LOCK_REASONS } from './workSchedulePolicy.js';
 
 const isValidDateKey = (value) => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -77,30 +76,14 @@ function buildItem({
   otLockedDateSet
 }) {
   const scheduleType = registration?.scheduleType || null;
-  const isScheduleLocked = Boolean(isWorkday && scheduleType);
   const isSuppressedByCalendar = !isWorkday && Boolean(registration);
-  const isPastDate = workDate < todayKey;
-  const isToday = workDate === todayKey;
-
-  let lockedReason = null;
-  let isReadOnly = false;
-
-  if (isPastDate) {
-    isReadOnly = true;
-    lockedReason = WORK_SCHEDULE_LOCK_REASONS.PAST_DATE;
-  } else if (!isWorkday) {
-    isReadOnly = true;
-    lockedReason = WORK_SCHEDULE_LOCK_REASONS.NON_WORKDAY;
-  } else if (isScheduleLocked) {
-    isReadOnly = true;
-    lockedReason = WORK_SCHEDULE_LOCK_REASONS.SCHEDULE_LOCKED;
-  } else if (isToday && checkedInDateSet.has(workDate)) {
-    isReadOnly = true;
-    lockedReason = WORK_SCHEDULE_LOCK_REASONS.ALREADY_CHECKED_IN;
-  } else if (otLockedDateSet.has(workDate)) {
-    isReadOnly = true;
-    lockedReason = WORK_SCHEDULE_LOCK_REASONS.OT_LOCKED;
-  }
+  const readonlyState = resolveScheduleReadonlyState({
+    workDate,
+    todayKey,
+    isWorkday,
+    hasCheckedIn: checkedInDateSet.has(workDate),
+    isOtLocked: otLockedDateSet.has(workDate)
+  });
 
   return {
     workDate,
@@ -108,10 +91,10 @@ function buildItem({
     isWorkday,
     isWeekend: isWeekendDay,
     isHoliday: isHolidayDay,
-    isLocked: isScheduleLocked,
-    isReadOnly,
+    isLocked: readonlyState.isLocked,
+    isReadOnly: readonlyState.isReadOnly,
     isSuppressedByCalendar,
-    lockedReason
+    lockedReason: readonlyState.lockedReason
   };
 }
 
@@ -323,8 +306,12 @@ export async function putMyScheduleWindow(userId, payload = {}) {
     }
 
     const rawScheduleType = payload.items?.find((entry) => entry?.workDate === item.workDate)?.scheduleType;
-    if (rawScheduleType != null && item.scheduleType == null) {
-      errorsByDate[item.workDate] = WORK_SCHEDULE_LOCK_REASONS.OUTSIDE_WINDOW;
+    const validationReason = resolveRawScheduleTypeValidationReason({
+      rawScheduleType,
+      normalizedScheduleType: item.scheduleType
+    });
+    if (validationReason) {
+      errorsByDate[item.workDate] = validationReason;
       continue;
     }
 
@@ -351,45 +338,27 @@ export async function putMyScheduleWindow(userId, payload = {}) {
     const isHolidayDay = context.holidaySet.has(workDate);
     const isWorkday = !isWeekendDay && !isHolidayDay;
     const isPastDate = workDate < context.windowStart;
-    const isToday = workDate === context.windowStart;
     const hasCheckedIn = context.checkedInDateSet.has(workDate);
     const isOtLocked = context.otLockedDateSet.has(workDate);
-    const hasChange = requestedType !== existingType;
+    const decision = resolveScheduleMutationDecision({
+      requestedType,
+      existingType,
+      isWorkday,
+      isPastDate,
+      hasCheckedIn,
+      isOtLocked
+    });
 
-    if (!hasChange) {
-      continue;
-    }
-
-    // Special no-op/non-workday suppression semantics
-    if (!isWorkday) {
-      const allowsNoopSuppressed = (
-        (!existing && requestedType === null) ||
-        (existing && requestedType === existingType)
-      );
-      if (!allowsNoopSuppressed) {
-        errorsByDate[workDate] = WORK_SCHEDULE_LOCK_REASONS.NON_WORKDAY;
-      }
+    if (decision.action === WORK_SCHEDULE_MUTATION_ACTIONS.NONE) {
       continue;
     }
 
-    if (isPastDate) {
-      errorsByDate[workDate] = WORK_SCHEDULE_LOCK_REASONS.PAST_DATE;
-      continue;
-    }
-    if (isToday && hasCheckedIn) {
-      errorsByDate[workDate] = WORK_SCHEDULE_LOCK_REASONS.ALREADY_CHECKED_IN;
-      continue;
-    }
-    if (isOtLocked) {
-      errorsByDate[workDate] = WORK_SCHEDULE_LOCK_REASONS.OT_LOCKED;
-      continue;
-    }
-    if (existingType) {
-      errorsByDate[workDate] = WORK_SCHEDULE_LOCK_REASONS.SCHEDULE_LOCKED;
+    if (decision.action === WORK_SCHEDULE_MUTATION_ACTIONS.REJECT) {
+      errorsByDate[workDate] = decision.reason;
       continue;
     }
 
-    if (requestedType == null) {
+    if (decision.action === WORK_SCHEDULE_MUTATION_ACTIONS.DELETE) {
       operations.push({
         deleteOne: {
           filter: {

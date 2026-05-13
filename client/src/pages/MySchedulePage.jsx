@@ -4,7 +4,7 @@ import { PageHeader, ScheduleBadge } from '../components/ui';
 import { getMyWorkSchedules, putMyWorkSchedules } from '../api/memberApi';
 
 const SCHEDULE_OPTIONS = [
-    { value: '', label: 'Chưa chốt' },
+    { value: '', label: 'Chưa chọn' },
     { value: 'SHIFT_1', label: 'Ca 1' },
     { value: 'SHIFT_2', label: 'Ca 2' },
     { value: 'FLEXIBLE', label: 'Linh hoạt' },
@@ -16,7 +16,6 @@ const LOCKED_REASON_LABELS = {
     NON_WORKDAY: 'Cuối tuần / ngày lễ',
     OUTSIDE_WINDOW: 'Ngoài cửa sổ 7 ngày',
     OT_LOCKED: 'Đã có OT đang chờ/đã duyệt',
-    SCHEDULE_LOCKED: 'Đã chốt ca, không thể chỉnh sửa',
 };
 
 const formatDate = (dateKey) => {
@@ -65,6 +64,7 @@ export default function MySchedulePage() {
     }, [loadData]);
 
     const items = useMemo(() => Array.isArray(windowData?.items) ? windowData.items : [], [windowData]);
+    const hasEditableRows = useMemo(() => items.some((item) => !item.isReadOnly), [items]);
 
     const handleChange = (workDate, value) => {
         setDraft((prev) => ({ ...prev, [workDate]: value }));
@@ -73,6 +73,33 @@ export default function MySchedulePage() {
             const next = { ...prev };
             delete next[workDate];
             return next;
+        });
+    };
+
+    const applyToEditableRows = (scheduleType) => {
+        const editableDates = items
+            .filter((item) => !item.isReadOnly)
+            .map((item) => item.workDate);
+
+        if (editableDates.length === 0) return;
+
+        setDraft((prev) => {
+            const next = { ...prev };
+            for (const workDate of editableDates) {
+                next[workDate] = scheduleType;
+            }
+            return next;
+        });
+        setErrorsByDate((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            for (const workDate of editableDates) {
+                if (next[workDate]) {
+                    delete next[workDate];
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
         });
     };
 
@@ -99,13 +126,13 @@ export default function MySchedulePage() {
             }
             setDraft(nextDraft);
             setWindowData(payload);
-            setSuccess('Đã chốt lịch đăng ký ca');
+            setSuccess('Đã lưu lịch ca');
         } catch (err) {
             const response = err.response?.data || {};
             if (response.code === 'INVALID_SCHEDULE_WINDOW' && response.errorsByDate) {
                 setErrorsByDate(response.errorsByDate);
             }
-            setError(response.message || 'Không thể lưu lịch đăng ký ca');
+            setError(response.message || 'Không thể lưu lịch ca');
         } finally {
             setSaving(false);
         }
@@ -115,15 +142,36 @@ export default function MySchedulePage() {
         <div className="space-y-4">
             <PageHeader
                 title="Lịch ca của tôi"
-                subtitle="Chọn ca cho 7 ngày tới (hôm nay + 6 ngày). Khi đã chốt ca sẽ không thể sửa lại."
+                subtitle="Có thể chỉnh sửa ca cho các ngày làm việc chưa check-in và chưa có OT."
             >
+                <Button
+                    color="light"
+                    onClick={() => applyToEditableRows('SHIFT_1')}
+                    disabled={loading || saving || !hasEditableRows}
+                >
+                    Áp dụng Ca 1
+                </Button>
+                <Button
+                    color="light"
+                    onClick={() => applyToEditableRows('SHIFT_2')}
+                    disabled={loading || saving || !hasEditableRows}
+                >
+                    Áp dụng Ca 2
+                </Button>
+                <Button
+                    color="light"
+                    onClick={() => applyToEditableRows('FLEXIBLE')}
+                    disabled={loading || saving || !hasEditableRows}
+                >
+                    Áp dụng Linh hoạt
+                </Button>
                 <Button color="blue" onClick={handleSave} disabled={loading || saving}>
                     {saving ? (
                         <>
                             <Spinner size="sm" className="mr-2" />
                             Đang lưu...
                         </>
-                    ) : 'Chốt lịch'}
+                    ) : 'Lưu lịch'}
                 </Button>
             </PageHeader>
 
@@ -157,7 +205,7 @@ export default function MySchedulePage() {
                                 {items.map((item) => {
                                     const lockedError = errorsByDate[item.workDate];
                                     const lockedReasonLabel = LOCKED_REASON_LABELS[item.lockedReason] || item.lockedReason || '-';
-                                    const isDisabled = Boolean(item.isReadOnly || item.isLocked || saving);
+                                    const isDisabled = Boolean(item.isReadOnly || saving);
 
                                     return (
                                         <Table.Row key={item.workDate} className={lockedError ? 'bg-red-50' : 'bg-white'}>
