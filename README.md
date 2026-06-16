@@ -145,8 +145,8 @@ mongod --version  # if using local MongoDB
 ### 1️⃣ Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/attendance-management-system.git
-cd attendance-management-system
+git clone https://github.com/PhucFanMu20Nams/attendance_tracking.git
+cd attendance_tracking
 ```
 
 ### 2️⃣ Server Setup
@@ -421,7 +421,7 @@ npm run test:watch
 ## 📁 Project Structure
 
 ```
-attendance-management-system/
+attendance_tracking/
 ├── client/                          # React frontend application
 │   ├── src/
 │   │   ├── api/                    # API client functions (axios)
@@ -791,7 +791,7 @@ SOFTWARE.
 
 ## 📞 Contact & Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/attendance-management-system/issues)
+- **Issues**: [GitHub Issues](https://github.com/PhucFanMu20Nams/attendance_tracking/issues)
 - **Documentation**: See `/docs` folder for detailed specifications
 - **Email**: your.email@example.com
 
@@ -822,6 +822,6 @@ SOFTWARE.
 
 Made with ❤️ for SME attendance management
 
-[Report Bug](https://github.com/yourusername/attendance-management-system/issues) · [Request Feature](https://github.com/yourusername/attendance-management-system/issues) · [View Demo](https://your-demo-url.com)
+[Report Bug](https://github.com/PhucFanMu20Nams/attendance_tracking/issues) · [Request Feature](https://github.com/PhucFanMu20Nams/attendance_tracking/issues) · [View Demo](https://attendancetrackers.tech/)
 
 </div>
